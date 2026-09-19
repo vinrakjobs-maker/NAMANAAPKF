@@ -347,14 +347,6 @@ export function loadClinicSettings(): ClinicSettings {
     const raw = localStorage.getItem(CLINIC_SETTINGS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed.address) {
-        if (typeof parsed.address.line1 === 'string' && (parsed.address.line1.includes('ROYAL OAK FURNITURE') || parsed.address.line1.includes('Behind Royal Oak Furniture'))) {
-          parsed.address.line1 = 'Royal Oak Furniture, 1st Floor,';
-        }
-        if (typeof parsed.address.full === 'string' && (parsed.address.full.includes('ROYAL OAK FURNITURE') || parsed.address.full.includes('Behind Royal Oak Furniture'))) {
-          parsed.address.full = 'Royal Oak Furniture, 1st Floor, Near Akshaya Bhandar, Kuvempunagar, Mysuru, Karnataka 570023';
-        }
-      }
       return {
         ...CLINIC_CONFIG,
         ...parsed,
@@ -362,8 +354,6 @@ export function loadClinicSettings(): ClinicSettings {
         consultantEducation: 'BPT, MIAP',
         address: {
           ...CLINIC_CONFIG.address,
-          ...(parsed.address || {}),
-          full: 'Royal Oak Furniture, 1st Floor, Near Akshaya Bhandar, Kuvempunagar, Mysuru, Karnataka 570023',
         },
       };
     }

@@ -59,43 +59,45 @@ export function generatePdfTaxReport(data: TaxReportData): void {
   doc.roundedRect(margin, margin, contentWidth, 24, 2, 2, 'F');
   doc.setDrawColor(224, 242, 254);
   doc.setLineWidth(0.3);
-  doc.roundedRect(margin, margin, contentWidth, 24, 2, 2, 'D');
+  doc.roundedRect(margin, margin, contentWidth, 26, 2, 2, 'D');
 
   // Draw official clinic logo on left
-  drawClinicLogoToPdf(doc, margin + 4, margin + 3.5, 17);
+  drawClinicLogoToPdf(doc, margin + 4, margin + 4, 18);
 
   // Clinic Header Text (centered across the header text block)
   const headerTextCenterX = margin + 17 + (contentWidth - 17) / 2;
 
   // Clinic Name
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14.5);
+  doc.setFontSize(14);
   doc.setTextColor(3, 105, 161); // Sky blue #0369a1
-  doc.text(CLINIC_CONFIG.clinicName.toUpperCase(), headerTextCenterX, margin + 6.5, { align: 'center' });
+  doc.text(CLINIC_CONFIG.clinicName.toUpperCase(), headerTextCenterX, margin + 5.5, { align: 'center' });
 
   // Clinic Address
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
+  doc.setFontSize(6.8);
   doc.setTextColor(51, 65, 85);
-  doc.text(CLINIC_CONFIG.address.full, headerTextCenterX, margin + 11.5, { align: 'center' });
+  const addressLines = doc.splitTextToSize(CLINIC_CONFIG.address.full, contentWidth - 26);
+  doc.text(addressLines, headerTextCenterX, margin + 9.5, { align: 'center' });
 
   // Practitioner, Phone & GSTIN
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
+  doc.setFontSize(7.2);
   doc.setTextColor(71, 85, 105);
   let contactLine = `Consultant: ${CLINIC_CONFIG.consultantName || 'R. Chandrashekar'}, ${CLINIC_CONFIG.consultantEducation || 'BPT, MIAP'} • ${CLINIC_CONFIG.consultantTitle}   •   Mob: ${CLINIC_CONFIG.phone}`;
   if (settings.gstNumber) {
     contactLine += `   •   GSTIN: ${settings.gstNumber}`;
   }
-  doc.text(contactLine, headerTextCenterX, margin + 16.5, { align: 'center' });
+  const contactY = margin + 9.5 + addressLines.length * 3 + 1.2;
+  doc.text(contactLine, headerTextCenterX, contactY, { align: 'center' });
 
   // Services Tagline
   doc.setFont('helvetica', 'italic');
-  doc.setFontSize(7);
+  doc.setFontSize(6.8);
   doc.setTextColor(2, 132, 199);
-  doc.text(CLINIC_CONFIG.services, headerTextCenterX, margin + 20.5, { align: 'center' });
+  doc.text(CLINIC_CONFIG.services, headerTextCenterX, contactY + 3.8, { align: 'center' });
 
-  let y = margin + 27;
+  let y = margin + 28.5;
 
   // Report Title Banner
   doc.setFillColor(240, 249, 255); // sky-50
