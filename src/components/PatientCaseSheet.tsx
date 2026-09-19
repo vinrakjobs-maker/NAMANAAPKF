@@ -2532,6 +2532,7 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
           onDownloadAgain={handleDownloadCaseSheetPdf}
           patientName={patient.name}
           regNo={patient.regNo || formatPatientId(patient.date, patient.serial)}
+          patient={patient}
         />
       )}
 
