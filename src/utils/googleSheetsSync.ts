@@ -957,7 +957,8 @@ export function formatPatientForPayload(p: Patient) {
         updatedAt: fu.updatedAt ? new Date(fu.updatedAt).toISOString() : '',
       };
     }),
-    status: p.deleted ? 'Deleted' : 'Active',
+    deleted: !!p.deleted,
+    status: p.deleted ? 'Trash' : 'Active',
     createdAt: p.createdAt ? new Date(p.createdAt).toISOString() : '',
     updatedAt: p.updatedAt ? new Date(p.updatedAt).toISOString() : '',
   };
@@ -965,14 +966,14 @@ export function formatPatientForPayload(p: Patient) {
 
 /**
  * Pushes patients to a Google Apps Script Web App (Webhook) with guaranteed text formatting for phone numbers.
- * Supports full snapshots ('sync') and instant additions ('addPatient') targeting Archive 1 & 2 without overwriting.
+ * Supports full snapshots ('sync'), instant additions ('addPatient'), and permanent deletion ('permanentDelete').
  */
 export async function pushToGoogleAppsScript(
   webhookUrl: string,
   patients: Patient[],
   archiveConfig?: { archiveSheet1Id?: string; archiveSheet2Id?: string },
-  action: 'sync' | 'addPatient' = 'sync',
-  newPatient?: Patient
+  action: 'sync' | 'addPatient' | 'permanentDelete' = 'sync',
+  extraPayload?: any
 ): Promise<{ success: boolean; message: string; archiveReport?: any[] }> {
   if (!webhookUrl || !webhookUrl.startsWith('http')) {
     return {
@@ -1021,15 +1022,21 @@ export async function pushToGoogleAppsScript(
       };
     }
 
-    const payload = {
+    const payload: any = {
       action,
       timestamp: new Date().toISOString(),
       archiveSheet1Id: arc1Clean,
       archiveSheet2Id: arc2Clean,
       localDBData: localDBData,
-      newPatient: newPatient ? formatPatientForPayload(newPatient) : null,
       patients: patients.map(formatPatientForPayload),
     };
+
+    if (action === 'addPatient' && extraPayload) {
+      payload.newPatient = formatPatientForPayload(extraPayload);
+    } else if (action === 'permanentDelete' && extraPayload) {
+      payload.deletedPatientIds = extraPayload.deletedPatientIds || [];
+      payload.deletedRegNos = extraPayload.deletedRegNos || [];
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 25000);
@@ -3058,6 +3065,43 @@ function syncLocalDatabaseEngineSheet(targetSs, localDBData, nowTimestamp) {
 }
 
 /**
+ * Purges matching rows by registration number or identifier.
+ * Used when a patient record is permanently deleted with password confirmation.
+ */
+function purgeMatchingRows(ss, sheetName, regNormMap, colIndex) {
+  if (!ss) return 0;
+  try {
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return 0;
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return 0;
+    var numCols = sheet.getLastColumn() || 20;
+    var vals = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+    var rowsToKeep = [];
+    var purgedCount = 0;
+    for (var r = 0; r < vals.length; r++) {
+      var cellReg = normalizeRegKey(vals[r][colIndex]);
+      var cellName = normalizeNameKey(vals[r][1]);
+      if ((cellReg && regNormMap[cellReg]) || (cellName && regNormMap[cellName])) {
+        purgedCount++;
+      } else {
+        rowsToKeep.push(vals[r]);
+      }
+    }
+    if (purgedCount > 0) {
+      sheet.getRange(2, 1, lastRow - 1, numCols).clearContent();
+      if (rowsToKeep.length > 0) {
+        sheet.getRange(2, 1, rowsToKeep.length, rowsToKeep[0].length).setValues(rowsToKeep);
+      }
+    }
+    return purgedCount;
+  } catch(err) {
+    Logger.log("Error in purgeMatchingRows for " + sheetName + ": " + err);
+    return 0;
+  }
+}
+
+/**
  * Web App POST Request Handler
  * Receives realtime additions, updates, and deletions from clinic system.
  */
@@ -3095,6 +3139,49 @@ function doPost(e) {
       "Reg No", "Patient Name", "Session #", "Session Date", "Session Time", "Seen By", "Referred By",
       "Pain Before (0-10)", "Pain After (0-10)", "Pain Relief (pts)", "Clinical Progress Notes", "Treatments Given", "Session Fee (INR)", "Receipt No", "Payment Mode", "Visit Mode"
     ];
+
+    // =========================================================================
+    // CASE C: PERMANENT DELETION EVENT (Passkey Verified in Clinic System)
+    // Only when patient data is permanently erased with password confirmation
+    // does it get removed from the backup spreadsheet and archives.
+    // =========================================================================
+    if (action === 'permanentDelete') {
+      var delIds = payload.deletedPatientIds || [];
+      var delRegs = payload.deletedRegNos || [];
+      var delRegNorms = {};
+      for (var d = 0; d < delRegs.length; d++) {
+        var rk = normalizeRegKey(delRegs[d]);
+        if (rk) delRegNorms[rk] = true;
+      }
+      for (var di = 0; di < delIds.length; di++) {
+        var idKey = normalizeRegKey(delIds[di]);
+        if (idKey) delRegNorms[idKey] = true;
+      }
+
+      // Purge permanently deleted rows from Primary "Patient Directory" and Follow-ups
+      var pPurged = purgeMatchingRows(ssPrimary, "Patient Directory", delRegNorms, 0);
+      var fPurged = purgeMatchingRows(ssPrimary, "Follow-up Sessions Ledger", delRegNorms, 0);
+      var aPurged = purgeMatchingRows(ssPrimary, "Archive Patient Registry", delRegNorms, 0);
+
+      // Also purge from external archives if configured
+      for (var t = 0; t < targets.length; t++) {
+        try {
+          var ssArc = SpreadsheetApp.openById(targets[t].id);
+          if (ssArc) {
+            purgeMatchingRows(ssArc, "Archive Patient Registry", delRegNorms, 0);
+            purgeMatchingRows(ssArc, "Follow-up Sessions Ledger", delRegNorms, 0);
+          }
+        } catch(e) {}
+      }
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        action: 'permanentDelete',
+        purgedRecords: pPurged,
+        purgedFollowUps: fPurged,
+        timestamp: new Date().toISOString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
 
     // =========================================================================
     // CASE A: INSTANT "ADD PATIENT" EVENT (Direct Append to Archive 1 & 2, No Overwriting)
@@ -3285,7 +3372,11 @@ function doPost(e) {
 
     for (var i = 0; i < patients.length; i++) {
       var p = patients[i];
-      if (p.deleted || p.status === 'Deleted') continue;
+      // UNTIL PERMANENTLY DELETED: Soft-deleted (Trash) patients MUST REMAIN in the backup spreadsheet!
+      // Their entire data, notes, and session ledger remain backed up with Status = 'Trash'.
+      // Only when permanently deleted (erased from the system via passkey) are they omitted from the backup spreadsheet.
+      var isTrash = (p.deleted === true || String(p.status).toLowerCase() === 'deleted' || String(p.status).toLowerCase() === 'trash');
+      var statusLabel = isTrash ? 'Trash' : 'Active';
 
       var rawPhone = p.contact ? String(p.contact).trim() : '';
       var phoneCell = rawPhone ? (rawPhone.indexOf("'") === 0 ? rawPhone : "'" + rawPhone) : '';
@@ -3299,7 +3390,7 @@ function doPost(e) {
         p.painScaleAfter !== undefined ? p.painScaleAfter : '', p.painImprovement || '',
         p.vasChartSummary || '', p.treatmentFee || 0, p.paymentMethod || 'Cash', p.visitType || 'Clinic',
         p.receiptNo || '', p.followUpsCount || 0, p.followUpsTotalFee || 0, p.totalRevenue || 0,
-        p.followUpsSummary || '', 'Active', nowTimestamp
+        p.followUpsSummary || '', statusLabel, nowTimestamp
       ]);
 
       if (p.followUps && p.followUps.length > 0) {

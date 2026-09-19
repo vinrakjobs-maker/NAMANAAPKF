@@ -305,23 +305,44 @@ export function App() {
     );
   };
 
-  // Permanently erase multiple patients from database
+  // Permanently erase multiple patients from database and backup spreadsheet
   const handlePermanentDeleteMultiplePatients = (ids: string[]) => {
     const idSet = new Set(ids);
-    setPatients((prev) => {
-      const remaining = prev.filter((p) => !idSet.has(p.id));
-      for (const id of ids) {
-        try {
-          localStorage.removeItem('physio_patient_' + id);
-        } catch {}
-      }
-      return remaining;
-    });
+    const toDelete = patients.filter((p) => idSet.has(p.id));
+    const deletedRegNos = toDelete.map((p) => p.regNo).filter(Boolean);
+
+    const remaining = patients.filter((p) => !idSet.has(p.id));
+
+    setPatients(remaining);
+    savePatients(remaining);
+
+    for (const id of ids) {
+      try {
+        localStorage.removeItem('physio_patient_' + id);
+        localDB.deletePatient(id).catch(() => {});
+      } catch {}
+    }
 
     if (activePatientId && ids.includes(activePatientId)) {
-      const nextActive = patients.find((p) => !ids.includes(p.id) && !p.deleted) ||
-                         patients.find((p) => !ids.includes(p.id)) || null;
+      const nextActive = remaining.find((p) => !p.deleted) || remaining[0] || null;
       setActivePatientId(nextActive ? nextActive.id : null);
+    }
+
+    // Immediately notify Google Apps Script to purge these permanently deleted records from backup spreadsheet & archives
+    const webhook = clinicSettings.sheetsWebhookUrl || clinicSettings.googleAppsScriptWebhook;
+    if (webhook) {
+      pushToGoogleAppsScript(
+        webhook,
+        remaining,
+        {
+          archiveSheet1Id: clinicSettings.archiveSheetId1,
+          archiveSheet2Id: clinicSettings.archiveSheetId2,
+        },
+        'permanentDelete',
+        { deletedPatientIds: ids, deletedRegNos }
+      ).catch((e) => {
+        console.warn('Failed to purge permanently deleted patients from Google Sheets:', e);
+      });
     }
   };
 
@@ -498,6 +519,7 @@ export function App() {
                   onUpdatePatient={handleUpdatePatient}
                   onDeletePatient={handleDeletePatient}
                   onRestorePatient={handleRestorePatient}
+                  onPermanentDeletePatient={(id) => handlePermanentDeleteMultiplePatients([id])}
                   onOpenReceipt={handleOpenReceipt}
                   onClosePatient={() => {
                     setActivePatientId(null);

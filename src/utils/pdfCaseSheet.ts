@@ -69,7 +69,14 @@ export function createPdfCaseSheetDoc(patient: Patient): jsPDF {
   doc.setFontSize(8.5);
   doc.setTextColor(30, 41, 59);
 
-  // Row 1
+  // Present date of PDF download / generation
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const presentDate = `${yyyy}-${mm}-${dd}`;
+
+  // Row 1: Reg No, Present Download Date, Visit Mode
   doc.setFont('helvetica', 'bold');
   doc.text('Reg No: ', margin, y);
   doc.setFont('helvetica', 'normal');
@@ -77,13 +84,25 @@ export function createPdfCaseSheetDoc(patient: Patient): jsPDF {
 
   doc.setFont('helvetica', 'bold');
   doc.text('Date: ', margin + 60, y);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(2, 132, 199); // Highlighted present download date
+  doc.text(presentDate, margin + 72, y);
   doc.setFont('helvetica', 'normal');
-  doc.text(patient.date || '—', margin + 72, y);
+  doc.setTextColor(30, 41, 59);
+
+  if (patient.date && patient.date !== presentDate) {
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text(`(Reg: ${patient.date})`, margin + 93, y);
+    doc.setFontSize(8.5);
+    doc.setTextColor(30, 41, 59);
+  }
 
   doc.setFont('helvetica', 'bold');
-  doc.text('Visit Mode: ', margin + 115, y);
+  doc.text('Visit Mode: ', margin + 118, y);
   doc.setFont('helvetica', 'normal');
-  doc.text(patient.visitType || 'Clinic', margin + 135, y);
+  doc.text(patient.visitType || 'Clinic', margin + 138, y);
 
   y += 6;
   // Row 2: Name & Age/Sex
@@ -210,27 +229,100 @@ export function createPdfCaseSheetDoc(patient: Patient): jsPDF {
   doc.text(modLines, margin, y);
   y += modLines.length * 4.5 + 4;
 
-  // Follow-up Sessions
-  if (patient.followUps && patient.followUps.length > 0) {
+  // Follow-up Sessions (Full Multi-Page Support - Never Skipped or Truncated)
+  const followUpsList = patient.followUps || [];
+  if (followUpsList.length > 0) {
+    // If not enough room on current page for at least the header and 1-2 sessions, start a new page
+    if (y > pageHeight - 55) {
+      doc.addPage();
+      y = margin + 10;
+      // Header on continuation page
+      doc.setFillColor(240, 249, 255);
+      doc.rect(margin, y - 4, pageWidth - margin * 2, 8, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(3, 105, 161);
+      doc.text(`Namana Physiotherapy Clinic • Follow-up Records for: ${patient.name || 'Patient'} (${patient.regNo || formatPatientId(patient.date, patient.serial)})`, margin + 3, y + 1);
+      y += 9;
+    }
+
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.text(`Follow-Up Rehabilitation Sessions (${patient.followUps.length}):`, margin, y);
+    doc.setFontSize(9);
+    doc.setTextColor(3, 105, 161);
+    doc.text(`Follow-Up Rehabilitation Sessions (${followUpsList.length} recorded):`, margin, y);
     y += 5;
 
-    patient.followUps.slice(0, 6).forEach((fu, idx) => {
-      if (y > pageHeight - 30) return;
-      doc.setFillColor(248, 250, 252);
-      doc.rect(margin, y - 3, pageWidth - margin * 2, 9, 'F');
+    // Follow-ups Table Header
+    doc.setFillColor(224, 242, 254);
+    doc.rect(margin, y - 3, pageWidth - margin * 2, 6.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(12, 74, 110);
+    doc.text('SESSION & DATE', margin + 3, y + 1.5);
+    doc.text('MODE', margin + 36, y + 1.5);
+    doc.text('VAS PAIN', margin + 56, y + 1.5);
+    doc.text('INTERVENTIONS & CLINICAL NOTES', margin + 78, y + 1.5);
+    doc.text('FEE & RECEIPT', pageWidth - margin - 36, y + 1.5);
+    y += 6.5;
+
+    followUpsList.forEach((fu, idx) => {
+      // If close to page bottom, add a new page
+      if (y > pageHeight - 38) {
+        doc.addPage();
+        y = margin + 10;
+        doc.setFillColor(240, 249, 255);
+        doc.rect(margin, y - 4, pageWidth - margin * 2, 8, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(3, 105, 161);
+        doc.text(`Namana Physiotherapy Clinic • Follow-up Records for: ${patient.name || 'Patient'} (Contd.)`, margin + 3, y + 1);
+        y += 9;
+
+        // Re-print table header
+        doc.setFillColor(224, 242, 254);
+        doc.rect(margin, y - 3, pageWidth - margin * 2, 6.5, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.setTextColor(12, 74, 110);
+        doc.text('SESSION & DATE', margin + 3, y + 1.5);
+        doc.text('MODE', margin + 36, y + 1.5);
+        doc.text('VAS PAIN', margin + 56, y + 1.5);
+        doc.text('INTERVENTIONS & CLINICAL NOTES', margin + 78, y + 1.5);
+        doc.text('FEE & RECEIPT', pageWidth - margin - 36, y + 1.5);
+        y += 6.5;
+      }
+
+      // Alternate row background fill
+      if (idx % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(margin, y - 3, pageWidth - margin * 2, 9, 'F');
+      }
+
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
-      doc.text(`#${idx + 1} Date: ${fu.date}`, margin + 3, y + 2);
+      doc.setTextColor(30, 41, 59);
+      doc.text(`#${idx + 1}  ${fu.date}`, margin + 3, y + 2);
+
       doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(71, 85, 105);
+      doc.text(fu.visitType || 'Clinic', margin + 36, y + 2);
+
+      // Pain VAS
       const fuB = fu.painScaleBefore !== undefined ? `${fu.painScaleBefore}` : (fu.painScale !== undefined ? `${fu.painScale}` : '');
       const fuA = fu.painScaleAfter !== undefined ? `${fu.painScaleAfter}` : '';
+      doc.setFont('helvetica', fuB && fuA ? 'bold' : 'normal');
       if (fuB && fuA) {
-        doc.text(`VAS: ${fuB}➔${fuA}`, margin + 34, y + 2);
+        doc.setTextColor(3, 105, 161);
+      } else {
+        doc.setTextColor(71, 85, 105);
+      }
+      if (fuB && fuA) {
+        doc.text(`${fuB} ➔ ${fuA}/10`, margin + 56, y + 2);
       } else if (fuB) {
-        doc.text(`VAS: ${fuB}/10`, margin + 34, y + 2);
+        doc.text(`${fuB}/10`, margin + 56, y + 2);
+      } else {
+        doc.text('—', margin + 56, y + 2);
       }
 
       // Treatments & Notes
@@ -242,16 +334,38 @@ export function createPdfCaseSheetDoc(patient: Patient): jsPDF {
             fu.treatment?.tens ? 'TENS' : '',
             fu.treatment?.cervicalTraction ? 'C-Trac' : '',
             fu.treatment?.pelvicTraction ? 'P-Trac' : '',
-            fu.treatment?.exercise ? 'Ex' : '',
-            fu.treatment?.manual ? 'MT' : '',
+            fu.treatment?.exercise ? 'Exercise' : '',
+            fu.treatment?.manual ? 'Manual' : '',
           ].filter(Boolean).join(', ');
 
       const descText = [rxGiven ? `[${rxGiven}]` : '', fu.notes || ''].filter(Boolean).join(' ');
-      doc.text(descText.slice(0, 56), margin + 60, y + 2);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(51, 65, 85);
+      doc.text(descText ? descText.slice(0, 52) : 'Routine maintenance & modality', margin + 78, y + 2);
+
+      // Fee & Receipt
       doc.setFont('helvetica', 'bold');
-      doc.text(`Fee: INR ${fu.fee}/- (${fu.paymentMethod || 'Cash'})`, pageWidth - margin - 35, y + 2);
-      y += 10;
+      doc.setTextColor(15, 23, 42);
+      const feeText = fu.fee !== undefined && fu.fee !== '' ? `Rs. ${fu.fee}/-` : 'Rs. 0/-';
+      const payMode = fu.paymentMethod || 'Cash';
+      doc.text(`${feeText} (${payMode})`, pageWidth - margin - 36, y + 2);
+
+      y += 9.5;
     });
+    y += 3;
+  } else {
+    // If no follow-ups recorded yet, print a subtle placeholder line so the section is clear
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Follow-Up Rehabilitation Sessions: None recorded to date.', margin, y);
+    y += 6;
+  }
+
+  // Check if signature fits on current page; if not, add page
+  if (y > pageHeight - 35) {
+    doc.addPage();
+    y = margin + 15;
   }
 
   // Footer / Signature
@@ -270,6 +384,22 @@ export function createPdfCaseSheetDoc(patient: Patient): jsPDF {
   doc.setFontSize(6.5);
   doc.text('Authorized Physiotherapist Signature', pageWidth - margin - 5, y + 10.5, { align: 'right' });
 
+  // Present Date stamp in bottom-left footer
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Document Date (Generated/Downloaded): ${presentDate}`, margin, y + 10.5);
+
+  // Add Page Numbers to all pages
+  const totalPages = (doc as any).internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+  }
+
   return doc;
 }
 
@@ -278,13 +408,32 @@ export function getPdfCaseSheetBlob(patient: Patient): Blob {
   return doc.output('blob');
 }
 
+export function getPdfCaseSheetFileInfo(patient: Patient): {
+  fileName: string;
+  blob: Blob;
+  blobUrl: string;
+  dataUri: string;
+} {
+  const doc = createPdfCaseSheetDoc(patient);
+  const regClean = (patient.regNo || formatPatientId(patient.date, patient.serial) || 'record')
+    .replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeName = (patient.name || 'patient').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+  const todayStr = new Date().toISOString().split('T')[0];
+  const fileName = `CaseSheet_${regClean}_${safeName}_${todayStr}.pdf`;
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const dataUri = doc.output('datauristring');
+  return { fileName, blob, blobUrl, dataUri };
+}
+
 export async function generatePdfCaseSheet(patient: Patient): Promise<boolean> {
   try {
     const doc = createPdfCaseSheetDoc(patient);
     const regClean = (patient.regNo || formatPatientId(patient.date, patient.serial) || 'record')
       .replace(/[^a-zA-Z0-9_-]/g, '_');
     const safeName = (patient.name || 'patient').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
-    const fileName = `CaseSheet_${regClean}_${safeName}.pdf`;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const fileName = `CaseSheet_${regClean}_${safeName}_${todayStr}.pdf`;
 
     // 1. Direct browser download via jsPDF built-in file saver
     try {

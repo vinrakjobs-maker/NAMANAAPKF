@@ -27,6 +27,8 @@ import {
   Phone,
   TrendingDown,
   Loader2,
+  Eye,
+  ExternalLink,
 } from 'lucide-react';
 import { Patient, TreatmentModalities, FollowUpVisit, ReceiptData, PaymentMethod, LocumPhysiotherapist } from '../types';
 import { MODALITIES_LIST, BLOOD_GROUPS, COMMON_DIAGNOSES, HEIGHT_PRESETS } from '../constants';
@@ -43,10 +45,12 @@ import {
   addCustomTreatment,
   deleteCustomTreatment,
 } from '../utils/storage';
-import { generatePdfCaseSheet, getPdfCaseSheetBlob } from '../utils/pdfCaseSheet';
+import { generatePdfCaseSheet, getPdfCaseSheetBlob, getPdfCaseSheetFileInfo } from '../utils/pdfCaseSheet';
 import { getPdfReceiptBlob } from '../utils/pdfReceipt';
 import { ManageReferralDoctorsModal } from './ManageReferralDoctorsModal';
 import { ManageTreatmentsModal } from './ManageTreatmentsModal';
+import { PdfViewerModal } from './PdfViewerModal';
+import { PermanentDeleteModal } from './PermanentDeleteModal';
 import {
   PainScaleComponent,
   PainImprovementBadge,
@@ -70,11 +74,12 @@ interface PatientCaseSheetProps {
   onUpdatePatient: (updated: Patient) => void;
   onDeletePatient: (id: string) => void;
   onRestorePatient: (id: string) => void;
+  onPermanentDeletePatient?: (id: string) => void;
   onOpenReceipt: (data: Partial<ReceiptData>) => void;
   onClosePatient?: () => void;
 }
 
-type SubTab = 'diagnosis' | 'modalities' | 'followups';
+type SubTab = 'diagnosis' | 'modalities' | 'followups' | 'all';
 
 const PAYMENT_MODES: PaymentMethod[] = ['Cash', 'UPI', 'Card', 'Bank Transfer'];
 
@@ -83,11 +88,13 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
   onUpdatePatient,
   onDeletePatient,
   onRestorePatient,
+  onPermanentDeletePatient,
   onOpenReceipt,
   onClosePatient,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('diagnosis');
   const [showDeletePatientModal, setShowDeletePatientModal] = useState(false);
+  const [showPermanentDeleteModal, setShowPermanentDeleteModal] = useState(false);
   const [deleteFollowUpIdx, setDeleteFollowUpIdx] = useState<number | null>(null);
 
   // Locum Tenens & Referral Doctors state
@@ -105,23 +112,58 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
   const [pdfShareSuccess, setPdfShareSuccess] = useState<string | null>(null);
   const [customPhone, setCustomPhone] = useState('');
 
-  // PDF Generation state for Patient ID & Top PDF action
+  // In-System PDF Viewer & Download state
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfSuccessToast, setPdfSuccessToast] = useState(false);
+  const [lastDownloadedFileName, setLastDownloadedFileName] = useState<string>('');
+  const [pdfViewerState, setPdfViewerState] = useState<{
+    isOpen: boolean;
+    fileName: string;
+    blobUrl: string | null;
+    dataUri: string | null;
+  } | null>(null);
 
+  // Generates PDF, triggers save to downloads, and opens in-system PDF viewer
   const handleDownloadCaseSheetPdf = async () => {
     if (isGeneratingPdf) return;
     setIsGeneratingPdf(true);
     try {
-      const success = await generatePdfCaseSheet(patient);
-      if (success) {
-        setPdfSuccessToast(true);
-        setTimeout(() => setPdfSuccessToast(false), 3500);
-      }
+      const fileInfo = getPdfCaseSheetFileInfo(patient);
+      setLastDownloadedFileName(fileInfo.fileName);
+
+      // Trigger direct download
+      await generatePdfCaseSheet(patient);
+
+      // Open in-system viewer with direct link and preview
+      setPdfViewerState({
+        isOpen: true,
+        fileName: fileInfo.fileName,
+        blobUrl: fileInfo.blobUrl,
+        dataUri: fileInfo.dataUri,
+      });
+
+      setPdfSuccessToast(true);
+      setTimeout(() => setPdfSuccessToast(false), 6000);
     } catch (err) {
       console.error('Failed to generate PDF Case Sheet:', err);
     } finally {
       setIsGeneratingPdf(false);
+    }
+  };
+
+  // Opens the in-system PDF viewer modal directly without re-triggering file save dialog
+  const handleOpenPdfViewer = () => {
+    try {
+      const fileInfo = getPdfCaseSheetFileInfo(patient);
+      setLastDownloadedFileName(fileInfo.fileName);
+      setPdfViewerState({
+        isOpen: true,
+        fileName: fileInfo.fileName,
+        blobUrl: fileInfo.blobUrl,
+        dataUri: fileInfo.dataUri,
+      });
+    } catch (err) {
+      console.error('Failed to open PDF viewer modal:', err);
     }
   };
 
@@ -337,161 +379,277 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
       <div className="max-w-4xl mx-auto space-y-5">
         {/* Deleted record banner */}
         {isDeleted && (
-          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex items-center justify-between gap-3 shadow-xs">
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
             <div className="flex items-center gap-2.5">
               <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
               <div>
-                <p className="text-xs font-bold text-rose-900">This patient chart is in Trash</p>
-                <p className="text-[11px] text-rose-700">
-                  Data is retained until permanently cleared. You can restore this patient anytime.
+                <p className="text-xs font-bold text-rose-900">This patient record is in Trash</p>
+                <p className="text-[11px] text-rose-700 leading-relaxed">
+                  Until permanently deleted, this record remains present in your Google Sheets backup (Status: Trash). It will only be removed from the backup spreadsheet when permanently deleted after entering your password.
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => onRestorePatient(patient.id)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-300 transition-colors cursor-pointer shadow-2xs"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Restore Patient</span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => onRestorePatient(patient.id)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold border border-emerald-300 transition-colors cursor-pointer shadow-2xs"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Restore</span>
+              </button>
+              {onPermanentDeletePatient && (
+                <button
+                  type="button"
+                  onClick={() => setShowPermanentDeleteModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold border border-rose-700 transition-colors cursor-pointer shadow-2xs"
+                  title="Permanently Delete (Requires Password)"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Permanently Delete</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
 
         {/* Master Case Sheet Top Header Card */}
-        <div className="bg-white rounded-3xl p-4 sm:p-6 border border-sky-100 shadow-xs space-y-4">
-          <div className="flex flex-col md:flex-row md:items-start lg:items-center justify-between gap-3.5 pb-4 border-b border-sky-50">
-            {/* Name and Reg No */}
-            <div className="flex-1 space-y-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  id="btn-patient-id-badge"
-                  onClick={handleDownloadCaseSheetPdf}
-                  disabled={isGeneratingPdf}
-                  className="font-mono text-xs font-bold text-sky-800 bg-sky-100 hover:bg-sky-200 active:bg-sky-300 border border-sky-300 px-2.5 py-1 rounded-lg shrink-0 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs group"
-                  title="Click Patient ID to download/view Complete Case Sheet PDF"
-                >
-                  {isGeneratingPdf ? (
-                    <Loader2 className="w-3.5 h-3.5 text-sky-600 animate-spin shrink-0" />
-                  ) : (
-                    <Download className="w-3.5 h-3.5 text-sky-600 group-hover:scale-110 transition-transform shrink-0" />
-                  )}
-                  <span>Patient ID: {patient.regNo || formatPatientId(patient.date, patient.serial)}</span>
-                  <span className="text-[9px] bg-sky-600 group-hover:bg-sky-700 text-white font-sans px-1.5 py-0.2 rounded font-extrabold uppercase tracking-wide">
-                    PDF
-                  </span>
-                </button>
-                <input
-                  id="patient-name-input"
-                  type="text"
-                  value={patient.name}
-                  onChange={(e) => updateField('name', e.target.value)}
-                  placeholder="Patient Full Name *"
-                  disabled={isDeleted}
-                  className="text-lg sm:text-xl font-extrabold text-sky-950 placeholder-slate-400 outline-none border-b border-transparent focus:border-sky-500 bg-transparent flex-1 min-w-0"
-                />
-              </div>
-
-              {/* PDF Download Success Banner */}
-              {pdfSuccessToast && (
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold animate-fade-in">
-                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Case sheet PDF generated successfully!</span>
-                </div>
-              )}
-
-              {/* Quick Details line */}
-              <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
-                <span>Date: <b className="text-slate-800">{patient.date || '—'}</b></span>
-                <span>•</span>
-                <span>Time: <b className="text-slate-800 font-mono">{patient.time || formatTime24Hour(patient.createdAt)}</b></span>
-                <span>•</span>
-                <span>Mode: <b className="text-slate-800">{patient.visitType || 'Clinic'}</b></span>
-                <span>•</span>
-                <span>Fee Mode: <b className="text-sky-700 font-bold">{patient.paymentMethod || 'Cash'}</b></span>
-                <span>•</span>
-                <span>
-                  Consultant: <b className="text-slate-800">{patient.seenBy || 'R. Chandrashekar'}</b>{' '}
-                  <span className="text-[10px] text-slate-500 font-normal">
-                    {locums.find((l) => l.name === patient.seenBy)?.qualification || (patient.seenBy === 'R. Chandrashekar' || !patient.seenBy ? 'BPT, MIAP' : '')}
-                  </span>
-                </span>
-                {bmi && (
-                  <>
-                    <span>•</span>
-                    <span className="px-2 py-0.5 rounded-md text-[11px] font-bold border border-sky-200 bg-sky-50 text-sky-900">
-                      BMI {bmi.bmi} ({bmi.category})
-                    </span>
-                  </>
-                )}
-              </div>
+        <div className="bg-white rounded-3xl p-4 sm:p-6 border border-sky-100 shadow-xs space-y-3.5">
+          {/* Top Bar: Patient ID Badge & Close Button (Cleanly aligned opposite ends) */}
+          <div className="flex items-center justify-between gap-3">
+            <div
+              id="patient-id-badge"
+              className="whitespace-nowrap shrink-0 font-mono text-xs font-bold text-sky-800 bg-sky-100 border border-sky-300 px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-2xs"
+              title="Patient Registration Number"
+            >
+              <FileText className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+              <span className="whitespace-nowrap">Patient ID: {patient.regNo || formatPatientId(patient.date, patient.serial)}</span>
             </div>
 
-            {/* Top Right Action Controls: Red Close Button placed ABOVE Receipt and PDF buttons, with zero overflow across tab and mobile */}
-            <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0 self-stretch sm:self-auto min-w-0">
-              {onClosePatient && (
-                <button
-                  type="button"
-                  id="close-patient-action-btn"
-                  onClick={onClosePatient}
-                  className="flex items-center justify-center text-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white border border-rose-700 text-xs font-bold transition-all cursor-pointer shadow-xs w-full sm:w-auto"
-                  title="Close Patient Record (Show Sidebar Directory & No Patient Selected Screen)"
-                >
-                  <X className="w-3.5 h-3.5 text-white shrink-0 stroke-[2.5]" />
-                  <span className="text-center whitespace-nowrap">Close Patient</span>
-                </button>
-              )}
+            {/* Top-Right: Dedicated Close Patient Button */}
+            {onClosePatient && (
+              <button
+                type="button"
+                id="close-patient-action-btn"
+                onClick={onClosePatient}
+                className="flex items-center justify-center text-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white border border-rose-700 text-xs font-bold transition-all cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                title="Close Patient Record"
+              >
+                <X className="w-3.5 h-3.5 text-white shrink-0 stroke-[2.5]" />
+                <span className="text-center whitespace-nowrap">Close Patient</span>
+              </button>
+            )}
+          </div>
 
-              <div className="flex items-center justify-center sm:justify-end gap-1.5 w-full sm:w-auto flex-wrap">
-                <button
-                  type="button"
-                  id="btn-case-sheet-receipt"
-                  onClick={handleOpenInitialReceipt}
-                  className="flex-1 sm:flex-initial flex items-center justify-center text-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-700 border border-emerald-200 text-xs font-bold transition-colors cursor-pointer shadow-2xs whitespace-nowrap min-w-0"
-                  title="Generate Official Consultation Receipt"
-                >
-                  <Receipt className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span className="text-center">Receipt</span>
-                </button>
+          {/* Dedicated Full-Width Row for Patient Name (Impossible to be overlapped) */}
+          <div className="pb-2 border-b border-sky-100/80">
+            <input
+              id="patient-name-input"
+              type="text"
+              value={patient.name}
+              onChange={(e) => updateField('name', e.target.value)}
+              placeholder="Patient Full Name *"
+              disabled={isDeleted}
+              className="w-full text-xl sm:text-2xl font-black text-sky-950 placeholder-slate-400 outline-none border-b-2 border-transparent focus:border-sky-500 bg-transparent transition-colors py-0.5"
+            />
+          </div>
 
-                <button
-                  type="button"
-                  id="btn-case-sheet-pdf"
-                  onClick={handleDownloadCaseSheetPdf}
-                  disabled={isGeneratingPdf}
-                  className="flex-1 sm:flex-initial flex items-center justify-center text-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 active:bg-sky-200 text-sky-800 border border-sky-200 text-xs font-bold transition-colors cursor-pointer shadow-2xs whitespace-nowrap min-w-0"
-                  title="Download Complete Case Sheet PDF"
-                >
-                  {isGeneratingPdf ? (
-                    <Loader2 className="w-3.5 h-3.5 text-sky-600 animate-spin shrink-0" />
-                  ) : (
-                    <Download className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                  )}
-                  <span className="text-center">{isGeneratingPdf ? 'Saving PDF...' : 'PDF'}</span>
-                </button>
+          {/* Row 2: Action Toolbar (Receipt, View PDF, Download PDF, Delete) - Never Collides with Title */}
+          <div className="flex items-center justify-between gap-2.5 flex-wrap bg-slate-50/90 p-2.5 px-3.5 rounded-2xl border border-slate-200/80">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                id="btn-case-sheet-receipt"
+                onClick={handleOpenInitialReceipt}
+                className="flex items-center justify-center text-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white border border-emerald-700 text-xs font-bold transition-colors cursor-pointer shadow-2xs whitespace-nowrap"
+                title="Generate Official Consultation Receipt"
+              >
+                <Receipt className="w-3.5 h-3.5 text-white shrink-0" />
+                <span className="text-center whitespace-nowrap">Receipt</span>
+              </button>
 
-                {!isDeleted ? (
-                  <button
-                    type="button"
-                    id="btn-case-sheet-delete"
-                    onClick={() => setShowDeletePatientModal(true)}
-                    className="flex items-center justify-center text-center p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs transition-colors cursor-pointer shadow-2xs shrink-0"
-                    title="Delete Patient Record"
-                  >
-                    <Trash2 className="w-4 h-4 shrink-0" />
-                  </button>
+              {/* Follow-up Sessions Direct Access Button */}
+              <button
+                type="button"
+                id="btn-case-sheet-followups-toolbar"
+                onClick={() => setActiveSubTab('followups')}
+                className={`flex items-center justify-center text-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-2xs whitespace-nowrap ${
+                  activeSubTab === 'followups'
+                    ? 'bg-emerald-700 text-white border border-emerald-800'
+                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                }`}
+                title="View & manage follow-up rehabilitation sessions"
+              >
+                <Calendar className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-center whitespace-nowrap">
+                  Follow-ups ({patient.followUps?.length || 0})
+                </span>
+              </button>
+
+              {/* View / Open PDF In-System Link Button */}
+              <button
+                type="button"
+                id="btn-case-sheet-view-pdf"
+                onClick={handleOpenPdfViewer}
+                className="flex items-center justify-center text-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white border border-sky-700 text-xs font-bold transition-colors cursor-pointer shadow-2xs whitespace-nowrap"
+                title="View Case Sheet PDF in this system and access direct link"
+              >
+                <Eye className="w-3.5 h-3.5 text-white shrink-0" />
+                <span className="text-center whitespace-nowrap">View PDF</span>
+              </button>
+
+              {/* Download PDF to Device Button */}
+              <button
+                type="button"
+                id="btn-case-sheet-pdf"
+                onClick={handleDownloadCaseSheetPdf}
+                disabled={isGeneratingPdf}
+                className="flex items-center justify-center text-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-sky-50 active:bg-sky-100 text-sky-800 border border-sky-300 text-xs font-bold transition-colors cursor-pointer shadow-2xs whitespace-nowrap"
+                title="Download Complete Case Sheet PDF to Device Downloads"
+              >
+                {isGeneratingPdf ? (
+                  <Loader2 className="w-3.5 h-3.5 text-sky-600 animate-spin shrink-0" />
                 ) : (
+                  <Download className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                )}
+                <span className="text-center whitespace-nowrap">{isGeneratingPdf ? 'Saving...' : 'Download PDF'}</span>
+              </button>
+            </div>
+
+            {/* Delete / Restore Actions */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {!isDeleted ? (
+                <button
+                  type="button"
+                  id="btn-case-sheet-delete"
+                  onClick={() => setShowDeletePatientModal(true)}
+                  className="flex items-center justify-center text-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-colors cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+                  title="Move Patient Record to Trash"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span>Delete</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     id="btn-case-sheet-restore"
                     onClick={() => onRestorePatient(patient.id)}
-                    className="flex items-center justify-center text-center p-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs transition-colors cursor-pointer shadow-2xs shrink-0"
-                    title="Restore patient"
+                    className="flex items-center justify-center text-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-colors cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+                    title="Restore patient record"
                   >
-                    <RotateCcw className="w-4 h-4 shrink-0" />
+                    <RotateCcw className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Restore</span>
                   </button>
-                )}
+                  {onPermanentDeletePatient && (
+                    <button
+                      type="button"
+                      id="btn-case-sheet-perm-delete"
+                      onClick={() => setShowPermanentDeleteModal(true)}
+                      className="flex items-center justify-center text-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white border border-rose-700 text-xs font-bold transition-colors cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+                      title="Permanently Delete Patient (Requires Password)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>Perm. Delete</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Row 2: PDF Download Success Banner with Clickable System Access Link */}
+          {pdfSuccessToast && (
+            <div
+              onClick={handleOpenPdfViewer}
+              className="flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-bold cursor-pointer transition-all shadow-2xs"
+              title="Click to view PDF in this system"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="truncate">
+                  Downloaded to device Downloads folder: <b className="font-mono">{lastDownloadedFileName || 'CaseSheet.pdf'}</b>
+                </span>
               </div>
+              <span className="text-sky-700 hover:text-sky-900 underline flex items-center gap-1 shrink-0 whitespace-nowrap ml-2">
+                <Eye className="w-3.5 h-3.5" />
+                <span>Open / Access Link</span>
+              </span>
+            </div>
+          )}
+
+          {/* Row 3: Quick Details line (Always full width, never squished) */}
+          <div className="flex items-center gap-2 sm:gap-3 text-xs text-slate-600 flex-wrap py-2 px-3 rounded-xl bg-sky-50/50 border border-sky-100/80">
+            <span className="whitespace-nowrap">Date: <b className="text-slate-900">{patient.date || '—'}</b></span>
+            <span className="text-slate-300">•</span>
+            <span className="whitespace-nowrap">Time: <b className="text-slate-900 font-mono">{patient.time || formatTime24Hour(patient.createdAt)}</b></span>
+            <span className="text-slate-300">•</span>
+            <span className="whitespace-nowrap">Mode: <b className="text-slate-900">{patient.visitType || 'Clinic'}</b></span>
+            <span className="text-slate-300">•</span>
+            <span className="whitespace-nowrap">Fee Mode: <b className="text-sky-800 font-bold">{patient.paymentMethod || 'Cash'}</b></span>
+            <span className="text-slate-300">•</span>
+            <span className="whitespace-nowrap">
+              Consultant: <b className="text-slate-900">{patient.seenBy || 'R. Chandrashekar'}</b>{' '}
+              <span className="text-[10.5px] text-slate-500 font-normal">
+                {locums.find((l) => l.name === patient.seenBy)?.qualification || (patient.seenBy === 'R. Chandrashekar' || !patient.seenBy ? 'BPT, MIAP' : '')}
+              </span>
+            </span>
+            {bmi && (
+              <>
+                <span className="text-slate-300">•</span>
+                <span className="whitespace-nowrap px-2 py-0.5 rounded-md text-[11px] font-bold border border-sky-200 bg-sky-100 text-sky-900">
+                  BMI {bmi.bmi} ({bmi.category})
+                </span>
+              </>
+            )}
+            <span className="text-slate-300">•</span>
+            <button
+              type="button"
+              id="quick-details-followups-btn"
+              onClick={() => setActiveSubTab('followups')}
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-bold border border-emerald-300 bg-emerald-100/90 hover:bg-emerald-200 text-emerald-900 transition-colors cursor-pointer shadow-2xs whitespace-nowrap"
+              title="Click to view all follow-up rehabilitation sessions"
+            >
+              <Calendar className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+              <span>Follow-ups: {patient.followUps?.length || 0} Sessions</span>
+              <span className="text-[10px] text-emerald-700 font-extrabold">➔</span>
+            </button>
+          </div>
+
+          {/* Row 4: In-System PDF Access Link Bar (Buttons on next line) */}
+          <div className="flex flex-col gap-2 p-2.5 px-3.5 rounded-xl bg-sky-50/80 border border-sky-200 text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <FileText className="w-4 h-4 text-sky-700 shrink-0" />
+              <span className="text-sky-950 font-semibold truncate">
+                Case Sheet PDF: <span className="font-mono text-[11px] text-sky-800 font-bold select-all">CaseSheet_{(patient.regNo || formatPatientId(patient.date, patient.serial)).replace(/[^a-zA-Z0-9_-]/g, '_')}_{(patient.name || 'patient').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase()}_{new Date().toISOString().split('T')[0]}.pdf</span>
+              </span>
+            </div>
+            <div className="flex items-center gap-2 pt-0.5">
+              <button
+                type="button"
+                id="btn-access-view-pdf"
+                onClick={handleOpenPdfViewer}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white text-xs font-bold cursor-pointer transition-colors shadow-2xs whitespace-nowrap"
+                title="Open PDF Viewer & direct link inside system"
+              >
+                <Eye className="w-3.5 h-3.5 shrink-0" />
+                <span>Access / View PDF</span>
+              </button>
+              <button
+                type="button"
+                id="btn-download-pdf-bar"
+                onClick={handleDownloadCaseSheetPdf}
+                disabled={isGeneratingPdf}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-sky-100 text-sky-800 border border-sky-300 text-xs font-bold cursor-pointer transition-colors shadow-2xs whitespace-nowrap"
+                title="Download PDF to device"
+              >
+                {isGeneratingPdf ? (
+                  <Loader2 className="w-3.5 h-3.5 text-sky-600 animate-spin shrink-0" />
+                ) : (
+                  <Download className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span>{isGeneratingPdf ? 'Saving...' : 'Download'}</span>
+              </button>
             </div>
           </div>
 
@@ -503,7 +661,7 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
                 <span>Clinical Workflow (Follow Steps in Order 1 ➔ 2 ➔ 3):</span>
               </span>
               <span className="text-[10px] font-mono text-slate-400">
-                Step {activeSubTab === 'diagnosis' ? '1' : activeSubTab === 'modalities' ? '2' : '3'} of 3
+                Step {activeSubTab === 'diagnosis' ? '1' : activeSubTab === 'modalities' ? '2' : activeSubTab === 'followups' ? '3' : 'All'} of 3
               </span>
             </div>
 
@@ -632,12 +790,31 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
                   )}
                 </div>
               </button>
+
+              {/* ALL SECTIONS: View Entire Case Sheet Continuous */}
+              <button
+                type="button"
+                id="tab-view-all-sections"
+                onClick={() => setActiveSubTab('all')}
+                className={`w-full lg:w-auto px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between lg:justify-center gap-1.5 border shrink-0 ${
+                  activeSubTab === 'all'
+                    ? 'bg-slate-900 text-white border-slate-950 shadow-xs ring-2 ring-slate-400'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+                title="View All 3 Sections on a Single Continuous Page"
+              >
+                <Eye className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-nowrap">View All Sections</span>
+                {activeSubTab === 'all' && (
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                )}
+              </button>
             </nav>
           </div>
         </div>
 
         {/* SUBTAB 1: Assessment & Demographics */}
-        {activeSubTab === 'diagnosis' && (
+        {(activeSubTab === 'diagnosis' || activeSubTab === 'all') && (
           <div className="space-y-5">
             {/* Banner placed right below the Patient ID details container */}
             <div className="p-4 sm:p-5 bg-indigo-50/85 border border-indigo-200 rounded-3xl flex flex-col gap-3 shadow-2xs">
@@ -1189,6 +1366,95 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
               </div>
             </div>
 
+            {/* Follow-Up Rehabilitation Sessions Data Card (Always Visible on Assessment Step) */}
+            <div className="bg-white rounded-3xl p-5 sm:p-6 border border-emerald-200 shadow-xs space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-emerald-100">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <h3 className="text-xs font-extrabold uppercase tracking-wider text-emerald-950">
+                    Follow-Up Sessions Data ({patient.followUps?.length || 0} Recorded)
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubTab('followups')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <span>Manage Follow-Up Sessions (Step 3)</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {(!patient.followUps || patient.followUps.length === 0) ? (
+                <div className="py-4 px-4 bg-emerald-50/50 rounded-2xl border border-emerald-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                  <div className="text-center sm:text-left">
+                    <p className="font-bold text-emerald-950">No follow-up sessions recorded yet for this patient</p>
+                    <p className="text-[11px] text-emerald-800 mt-0.5">
+                      You can record subsequent clinic visits, pain progression (VAS ratings), interventions given, and consultation fees.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddFollowUp}
+                    disabled={isDeleted}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-2xs transition-colors cursor-pointer shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Record Session #1</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="overflow-x-auto rounded-xl border border-emerald-100">
+                    <table className="w-full text-xs text-left">
+                      <thead>
+                        <tr className="border-b border-emerald-100 text-emerald-900 font-bold bg-emerald-50/80">
+                          <th className="py-2 px-3">Session</th>
+                          <th className="py-2 px-3">Date</th>
+                          <th className="py-2 px-3">Mode</th>
+                          <th className="py-2 px-3">Pain (VAS)</th>
+                          <th className="py-2 px-3">Treatments & Clinical Notes</th>
+                          <th className="py-2 px-3 text-right">Fee</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-emerald-50">
+                        {patient.followUps.map((fu, idx) => {
+                          const fuB = fu.painScaleBefore ?? fu.painScale;
+                          const fuA = fu.painScaleAfter;
+                          return (
+                            <tr key={fu.id || idx} className="hover:bg-emerald-50/30 transition-colors">
+                              <td className="py-2 px-3 font-bold text-emerald-950">#{idx + 1}</td>
+                              <td className="py-2 px-3 font-semibold text-slate-800">{fu.date}</td>
+                              <td className="py-2 px-3 text-slate-600">{fu.visitType || 'Clinic'}</td>
+                              <td className="py-2 px-3">
+                                {fuB !== undefined && fuA !== undefined ? (
+                                  <span className="font-bold text-sky-800">{fuB} ➔ {fuA}/10</span>
+                                ) : fuB !== undefined ? (
+                                  <span className="font-medium text-slate-700">{fuB}/10</span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </td>
+                              <td className="py-2 px-3 text-slate-700 max-w-xs truncate">
+                                {fu.treatmentsGiven && fu.treatmentsGiven.length > 0
+                                  ? fu.treatmentsGiven.join(', ')
+                                  : fu.notes || 'Physiotherapy rehabilitation session'}
+                              </td>
+                              <td className="py-2 px-3 text-right font-bold text-slate-900">
+                                ₹{fu.fee || 0}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Proceed to Step 2 action button */}
             <div className="flex justify-end pt-2">
               <button
@@ -1204,7 +1470,7 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
         )}
 
         {/* SUBTAB 2: Modalities & Treatment Fee */}
-        {activeSubTab === 'modalities' && (
+        {(activeSubTab === 'modalities' || activeSubTab === 'all') && (
           <div className="space-y-5">
             {/* Instruction placed below the Patient ID details container */}
             <div className="p-4 sm:p-5 bg-emerald-50 border border-emerald-200 rounded-3xl flex flex-col gap-3 shadow-2xs">
@@ -1422,7 +1688,7 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
         )}
 
         {/* SUBTAB 3: Follow-up Sessions */}
-        {activeSubTab === 'followups' && (
+        {(activeSubTab === 'followups' || activeSubTab === 'all') && (
           <div className="space-y-4">
             <div className="bg-white rounded-3xl p-4 sm:p-5 border border-sky-100 shadow-xs flex flex-col gap-3">
               {/* Complete text placed first */}
@@ -1880,10 +2146,10 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
             <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
               <p className="font-bold flex items-center gap-1.5">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                <span>Important Notice</span>
+                <span>Backup Retention Policy</span>
               </p>
-              <p className="text-[11px] text-amber-800">
-                Their clinical assessments, {patient.followUps?.length || 0} follow-up records, and fee history will be archived. You can still restore the record from the Trash filter if needed.
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                This moves the patient to <b>Trash</b>. Their clinical notes, {patient.followUps?.length || 0} follow-up records, and fee history <b>remain securely stored in your Google Sheets backup</b> with status "Trash". They will only be purged from the backup spreadsheet when you permanently delete the record after entering your password.
               </p>
             </div>
 
@@ -1904,7 +2170,7 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Yes, Delete Record</span>
+                <span>Move to Trash</span>
               </button>
             </div>
           </div>
@@ -2253,6 +2519,35 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
         onAddTreatment={(name) => handleAddCustomTreatmentToClinic(name)}
         onDeleteTreatment={handleDeleteCustomTreatmentFromClinic}
       />
+
+      {/* In-System PDF Document Viewer Modal with direct download & open link */}
+      {pdfViewerState && (
+        <PdfViewerModal
+          isOpen={pdfViewerState.isOpen}
+          onClose={() => setPdfViewerState(null)}
+          title={`Clinical Case Sheet • ${patient.name}`}
+          fileName={pdfViewerState.fileName}
+          blobUrl={pdfViewerState.blobUrl}
+          dataUri={pdfViewerState.dataUri}
+          onDownloadAgain={handleDownloadCaseSheetPdf}
+          patientName={patient.name}
+          regNo={patient.regNo || formatPatientId(patient.date, patient.serial)}
+        />
+      )}
+
+      {/* Permanent Deletion Modal (Requires Password 9880517715 to purge from app & backup spreadsheet) */}
+      {showPermanentDeleteModal && onPermanentDeletePatient && (
+        <PermanentDeleteModal
+          isOpen={showPermanentDeleteModal}
+          patientCount={1}
+          patientNames={[patient.name || 'this patient']}
+          onConfirm={() => {
+            setShowPermanentDeleteModal(false);
+            onPermanentDeletePatient(patient.id);
+          }}
+          onClose={() => setShowPermanentDeleteModal(false)}
+        />
+      )}
     </div>
   );
 };

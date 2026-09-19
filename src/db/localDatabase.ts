@@ -353,6 +353,37 @@ class LocalDatabaseManager {
   }
 
   /**
+   * Permanently deletes a single patient and their follow-ups from IndexedDB
+   */
+  public async deletePatient(id: string): Promise<boolean> {
+    const db = await this.getDB();
+    if (!db || !id) return false;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(['patients', 'followUps'], 'readwrite');
+        const patientStore = tx.objectStore('patients');
+        patientStore.delete(id);
+
+        const fuStore = tx.objectStore('followUps');
+        const fuIndex = fuStore.index('patientId');
+        const fuReq = fuIndex.getAllKeys(id);
+        fuReq.onsuccess = () => {
+          const keys = fuReq.result;
+          if (Array.isArray(keys)) {
+            keys.forEach((key) => fuStore.delete(key));
+          }
+        };
+
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
+  /**
    * Saves Locum Physiotherapists into IndexedDB
    */
   public async saveLocumPhysiotherapists(locums: LocumPhysiotherapist[]): Promise<boolean> {
