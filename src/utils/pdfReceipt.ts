@@ -3,6 +3,7 @@ import { CLINIC_CONFIG } from '../constants';
 import { ReceiptData } from '../types';
 import { drawClinicLogoToPdf } from './clinicLogoPdf';
 import { loadClinicSettings, formatPatientId, parsePatientId } from './storage';
+import { downloadPdfDoc } from './pdfDownloadHelper';
 
 export function createPdfReceiptDoc(receipt: ReceiptData): jsPDF {
   const doc = new jsPDF({
@@ -202,53 +203,7 @@ export async function generatePdfReceipt(receipt: ReceiptData): Promise<boolean>
     const safeReceiptNo = (receipt.receiptNo || 'slip').replace(/[^a-zA-Z0-9_-]/g, '_');
     const fileName = `Receipt_${safeReceiptNo}_${safeName}.pdf`;
 
-    // 1. Direct browser download via jsPDF save
-    try {
-      doc.save(fileName);
-      return true;
-    } catch (saveErr) {
-      console.warn('doc.save direct trigger error on receipt, attempting blob anchor download:', saveErr);
-    }
-
-    // 2. Direct Blob URL Download link
-    try {
-      const blob = doc.output('blob');
-      const blobUrl = URL.createObjectURL(blob);
-      const downloadLink = document.createElement('a');
-      downloadLink.href = blobUrl;
-      downloadLink.download = fileName;
-      downloadLink.style.display = 'none';
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-
-      setTimeout(() => {
-        if (document.body.contains(downloadLink)) {
-          document.body.removeChild(downloadLink);
-        }
-        URL.revokeObjectURL(blobUrl);
-      }, 2500);
-
-      return true;
-    } catch (blobErr) {
-      console.warn('Blob anchor download failed on receipt, attempting data URI download:', blobErr);
-    }
-
-    // 3. Fallback: Data URI download link
-    const dataUri = doc.output('datauristring');
-    const downloadLink = document.createElement('a');
-    downloadLink.href = dataUri;
-    downloadLink.download = fileName;
-    downloadLink.style.display = 'none';
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-
-    setTimeout(() => {
-      if (document.body.contains(downloadLink)) {
-        document.body.removeChild(downloadLink);
-      }
-    }, 2500);
-
-    return true;
+    return await downloadPdfDoc(doc, fileName);
   } catch (err) {
     console.error('Receipt PDF download failed:', err);
     return false;

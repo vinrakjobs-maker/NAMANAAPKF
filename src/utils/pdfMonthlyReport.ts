@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { CLINIC_CONFIG } from '../constants';
+import { downloadPdfDoc } from './pdfDownloadHelper';
 
 export interface MonthlySessionRecord {
   id: string;
@@ -252,5 +253,5 @@ export function generatePdfMonthlyReport(data: MonthlyReportExportData): void {
     );
   }
 
-  doc.save(`Namana_Physio_Monthly_${selectedMonth}.pdf`);
+  downloadPdfDoc(doc, `Namana_Physio_Monthly_${selectedMonth}.pdf`);
 }

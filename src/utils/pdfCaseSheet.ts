@@ -3,6 +3,7 @@ import { CLINIC_CONFIG, MODALITIES_LIST } from '../constants';
 import { Patient } from '../types';
 import { drawClinicLogoToPdf } from './clinicLogoPdf';
 import { loadClinicSettings, formatPatientId } from './storage';
+import { downloadPdfDoc } from './pdfDownloadHelper';
 
 export function createPdfCaseSheetDoc(patient: Patient): jsPDF {
   const doc = new jsPDF({
@@ -435,53 +436,7 @@ export async function generatePdfCaseSheet(patient: Patient): Promise<boolean> {
     const todayStr = new Date().toISOString().split('T')[0];
     const fileName = `CaseSheet_${regClean}_${safeName}_${todayStr}.pdf`;
 
-    // 1. Direct browser download via jsPDF built-in file saver
-    try {
-      doc.save(fileName);
-      return true;
-    } catch (saveErr) {
-      console.warn('doc.save direct trigger encountered error, attempting blob anchor download:', saveErr);
-    }
-
-    // 2. Direct Blob URL Download link
-    try {
-      const blob = doc.output('blob');
-      const blobUrl = URL.createObjectURL(blob);
-      const downloadLink = document.createElement('a');
-      downloadLink.href = blobUrl;
-      downloadLink.download = fileName;
-      downloadLink.style.display = 'none';
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-
-      setTimeout(() => {
-        if (document.body.contains(downloadLink)) {
-          document.body.removeChild(downloadLink);
-        }
-        URL.revokeObjectURL(blobUrl);
-      }, 2500);
-
-      return true;
-    } catch (blobErr) {
-      console.warn('Blob anchor download failed, attempting data URI download:', blobErr);
-    }
-
-    // 3. Fallback: Data URI download link
-    const dataUri = doc.output('datauristring');
-    const downloadLink = document.createElement('a');
-    downloadLink.href = dataUri;
-    downloadLink.download = fileName;
-    downloadLink.style.display = 'none';
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-
-    setTimeout(() => {
-      if (document.body.contains(downloadLink)) {
-        document.body.removeChild(downloadLink);
-      }
-    }, 2500);
-
-    return true;
+    return await downloadPdfDoc(doc, fileName);
   } catch (primaryErr) {
     console.error('Case Sheet PDF download failed:', primaryErr);
     return false;

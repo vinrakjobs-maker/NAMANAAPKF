@@ -40,7 +40,7 @@ export function formatClinicalReportWhatsApp(patient: Patient): string {
 
   const lines = [
     `🏥 *${CLINIC_CONFIG.clinicName.toUpperCase()}*`,
-    `📍 ${CLINIC_CONFIG.address}`,
+    `📍 ${CLINIC_CONFIG.address.full}`,
     `📞 Phone: ${CLINIC_CONFIG.phone}`,
     `----------------------------------------`,
     `📋 *PHYSIOTHERAPY CLINICAL REPORT*`,
@@ -157,7 +157,7 @@ export function formatReceiptsWhatsApp(patient: Patient): string {
 
   const lines = [
     `🧾 *${CLINIC_CONFIG.clinicName.toUpperCase()}*`,
-    `📍 ${CLINIC_CONFIG.address}`,
+    `📍 ${CLINIC_CONFIG.address.full}`,
     `📞 Phone: ${CLINIC_CONFIG.phone}`,
     `----------------------------------------`,
     `💰 *OFFICIAL PAYMENT RECEIPT(S) SUMMARY*`,

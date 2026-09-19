@@ -123,7 +123,7 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
     dataUri: string | null;
   } | null>(null);
 
-  // Generates PDF, triggers save to downloads, and opens in-system PDF viewer
+  // Generates PDF and triggers direct save to downloads (as simple as Monthly Performance)
   const handleDownloadCaseSheetPdf = async () => {
     if (isGeneratingPdf) return;
     setIsGeneratingPdf(true);
@@ -131,19 +131,11 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
       const fileInfo = getPdfCaseSheetFileInfo(patient);
       setLastDownloadedFileName(fileInfo.fileName);
 
-      // Trigger direct download
+      // Trigger direct download to device
       await generatePdfCaseSheet(patient);
 
-      // Open in-system viewer with direct link and preview
-      setPdfViewerState({
-        isOpen: true,
-        fileName: fileInfo.fileName,
-        blobUrl: fileInfo.blobUrl,
-        dataUri: fileInfo.dataUri,
-      });
-
       setPdfSuccessToast(true);
-      setTimeout(() => setPdfSuccessToast(false), 6000);
+      setTimeout(() => setPdfSuccessToast(false), 5000);
     } catch (err) {
       console.error('Failed to generate PDF Case Sheet:', err);
     } finally {
@@ -415,28 +407,35 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
 
         {/* Master Case Sheet Top Header Card */}
         <div className="bg-white rounded-3xl p-4 sm:p-6 border border-sky-100 shadow-xs space-y-3.5">
-          {/* Top Bar: Patient ID Badge & Close Button (Cleanly aligned opposite ends) */}
-          <div className="flex items-center justify-between gap-3">
+          {/* Top Bar: Patient ID Badge & Close Button (Responsive to prevent mobile overflow) */}
+          <div className="flex items-center justify-between gap-2 w-full max-w-full">
             <div
               id="patient-id-badge"
-              className="whitespace-nowrap shrink-0 font-mono text-xs font-bold text-sky-800 bg-sky-100 border border-sky-300 px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-2xs"
+              className="font-mono text-[11px] sm:text-xs font-bold text-sky-800 bg-sky-100 border border-sky-300 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl flex items-center gap-1 sm:gap-1.5 shadow-2xs truncate min-w-0 max-w-[62%] sm:max-w-none"
               title="Patient Registration Number"
             >
               <FileText className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-              <span className="whitespace-nowrap">Patient ID: {patient.regNo || formatPatientId(patient.date, patient.serial)}</span>
+              <span className="truncate">
+                <span className="inline sm:hidden">ID: </span>
+                <span className="hidden sm:inline">Patient ID: </span>
+                {patient.regNo || formatPatientId(patient.date, patient.serial)}
+              </span>
             </div>
 
-            {/* Top-Right: Dedicated Close Patient Button */}
+            {/* Top-Right: Dedicated Close Patient Button (Responsive to never overflow on mobile) */}
             {onClosePatient && (
               <button
                 type="button"
                 id="close-patient-action-btn"
                 onClick={onClosePatient}
-                className="flex items-center justify-center text-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white border border-rose-700 text-xs font-bold transition-all cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                className="flex items-center justify-center text-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white border border-rose-700 text-xs font-bold transition-all cursor-pointer shadow-xs whitespace-nowrap shrink-0"
                 title="Close Patient Record"
               >
                 <X className="w-3.5 h-3.5 text-white shrink-0 stroke-[2.5]" />
-                <span className="text-center whitespace-nowrap">Close Patient</span>
+                <span className="text-center">
+                  <span className="inline sm:hidden">Close</span>
+                  <span className="hidden sm:inline">Close Patient</span>
+                </span>
               </button>
             )}
           </div>

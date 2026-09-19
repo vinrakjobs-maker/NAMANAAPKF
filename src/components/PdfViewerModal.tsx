@@ -3,7 +3,6 @@ import {
   X,
   Download,
   ExternalLink,
-  Printer,
   Check,
   Copy,
   FileText,
@@ -13,13 +12,13 @@ import {
   Calendar,
   User,
   ShieldCheck,
-  AlertCircle,
-  FileCode,
+  Loader2,
 } from 'lucide-react';
 import { Patient, FollowUpVisit } from '../types';
 import { CLINIC_CONFIG, MODALITIES_LIST } from '../constants';
 import { calculateBMI } from '../utils/bmi';
 import { formatPatientId } from '../utils/storage';
+import { generatePdfCaseSheet } from '../utils/pdfCaseSheet';
 
 interface PdfViewerModalProps {
   isOpen: boolean;
@@ -47,8 +46,7 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
   patient,
 }) => {
   const [copied, setCopied] = useState(false);
-  const [viewMode, setViewMode] = useState<'document' | 'embed'>('document');
-  const [embedLoadFailed, setEmbedLoadFailed] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   if (!isOpen) return null;
 
@@ -61,28 +59,37 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
 
   const bmi = patient ? calculateBMI(patient.height, patient.weight) : null;
 
-  const handleOpenInNewTab = () => {
-    if (blobUrl) {
-      window.open(blobUrl, '_blank', 'noopener,noreferrer');
-    } else if (dataUri) {
-      const win = window.open();
-      if (win) {
-        win.document.write(
-          `<iframe src="${dataUri}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`
-        );
-      }
-    }
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
   const handleCopyFileName = () => {
     navigator.clipboard.writeText(fileName).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  };
+
+  const handleDownload = async () => {
+    if (isDownloading) return;
+    setIsDownloading(true);
+    try {
+      if (onDownloadAgain) {
+        await onDownloadAgain();
+      } else if (patient) {
+        await generatePdfCaseSheet(patient);
+      } else if (activeSrc) {
+        const a = document.createElement('a');
+        a.href = activeSrc;
+        a.download = fileName;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          if (document.body.contains(a)) document.body.removeChild(a);
+        }, 1500);
+      }
+    } catch (err) {
+      console.error('Download error in PDF viewer modal:', err);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   // Get active modalities
@@ -102,7 +109,7 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-xs animate-fade-in print:p-0 print:bg-white print:static print:inset-auto">
       <div className="bg-white rounded-3xl w-full max-w-5xl h-[94vh] sm:h-[90vh] flex flex-col shadow-2xl border border-sky-200 overflow-hidden print:h-auto print:shadow-none print:border-none print:rounded-none">
         
-        {/* Header Bar - Hidden on Print */}
+        {/* Header Bar */}
         <div className="p-3.5 sm:p-4 bg-gradient-to-r from-sky-900 via-sky-800 to-indigo-900 text-white flex items-center justify-between gap-3 shrink-0 print:hidden">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="p-2 rounded-xl bg-white/10 text-sky-300 shrink-0">
@@ -125,85 +132,38 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
             </div>
           </div>
 
-          {/* Action buttons & View Mode Switcher */}
+          {/* Action buttons (Cleanly focused: Download & Close) */}
           <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-            {/* View Mode Toggle */}
-            <div className="hidden sm:flex items-center bg-white/10 p-0.5 rounded-xl border border-white/15 text-xs">
-              <button
-                type="button"
-                onClick={() => setViewMode('document')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  viewMode === 'document'
-                    ? 'bg-white text-sky-900 shadow-xs'
-                    : 'text-sky-200 hover:text-white'
-                }`}
-                title="View clean, formatted printable clinical document"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>Document View</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('embed')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  viewMode === 'embed'
-                    ? 'bg-white text-sky-900 shadow-xs'
-                    : 'text-sky-200 hover:text-white'
-                }`}
-                title="View embedded PDF plugin"
-              >
-                <FileCode className="w-3.5 h-3.5" />
-                <span>PDF Plugin</span>
-              </button>
-            </div>
+            {/* Direct Download Button */}
+            <button
+              type="button"
+              id="modal-header-download-btn"
+              onClick={handleDownload}
+              disabled={isDownloading}
+              className="px-3 sm:px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs shrink-0"
+              title="Download PDF Case Sheet to device"
+            >
+              {isDownloading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+              ) : (
+                <Download className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span>{isDownloading ? 'Downloading...' : 'Download PDF'}</span>
+            </button>
 
-            {/* Open in New Tab Link */}
+            {/* Open in New Tab Link for browser platforms */}
             {activeSrc && (
               <a
                 href={activeSrc}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border border-white/15"
+                className="hidden sm:flex px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all cursor-pointer items-center gap-1.5 border border-white/15"
                 title="Open PDF directly in a new browser tab"
               >
                 <ExternalLink className="w-3.5 h-3.5 text-sky-200" />
-                <span className="hidden sm:inline">Open New Tab</span>
+                <span>Open Tab</span>
               </a>
             )}
-
-            {/* Direct Download Button */}
-            {onDownloadAgain ? (
-              <button
-                type="button"
-                onClick={onDownloadAgain}
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
-                title="Download complete PDF Case Sheet to device"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Download PDF</span>
-              </button>
-            ) : activeSrc ? (
-              <a
-                href={activeSrc}
-                download={fileName}
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
-                title="Download PDF to device"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Download PDF</span>
-              </a>
-            ) : null}
-
-            {/* Print Button */}
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border border-white/15"
-              title="Print Document"
-            >
-              <Printer className="w-3.5 h-3.5 text-sky-200" />
-              <span className="hidden md:inline">Print</span>
-            </button>
 
             {/* Close Modal */}
             <button
@@ -217,7 +177,7 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
           </div>
         </div>
 
-        {/* Download & Notice Banner - Hidden on Print */}
+        {/* Notice Banner */}
         <div className="px-4 py-2 bg-emerald-50 border-b border-emerald-200 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 print:hidden">
           <div className="flex items-center gap-2 min-w-0 text-emerald-900">
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -248,343 +208,290 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
           </div>
         </div>
 
-        {/* Main Document Content Area */}
+        {/* Main Document Content Area: 100% Reliable Clinical Case Sheet View */}
         <div className="flex-1 bg-slate-100 overflow-y-auto p-3 sm:p-6 print:p-0 print:bg-white print:overflow-visible">
-          
-          {/* VIEW MODE 1: Print-Ready HTML Clinical Case Sheet (100% Reliable, never blank!) */}
-          {viewMode === 'document' ? (
-            <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-md border border-slate-200 p-6 sm:p-10 space-y-6 text-slate-800 font-sans print:shadow-none print:border-none print:p-0 print:max-w-full">
-              
-              {/* Clinic Header */}
-              <div className="border-b-2 border-sky-800 pb-4 text-center space-y-1">
-                <h1 className="text-xl sm:text-2xl font-black text-sky-950 tracking-tight uppercase">
-                  {CLINIC_CONFIG.clinicName}
-                </h1>
-                <p className="text-xs font-semibold italic text-sky-700">
-                  "{CLINIC_CONFIG.tagline}"
+          <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-md border border-slate-200 p-6 sm:p-10 space-y-6 text-slate-800 font-sans print:shadow-none print:border-none print:p-0 print:max-w-full">
+            
+            {/* Clinic Header */}
+            <div className="border-b-2 border-sky-800 pb-4 text-center space-y-1">
+              <h1 className="text-xl sm:text-2xl font-black text-sky-950 tracking-tight uppercase">
+                {CLINIC_CONFIG.clinicName}
+              </h1>
+              <p className="text-xs font-semibold italic text-sky-700">
+                "{CLINIC_CONFIG.tagline}"
+              </p>
+              <div className="text-[11px] text-slate-600 max-w-xl mx-auto leading-relaxed pt-1">
+                <p>{CLINIC_CONFIG.address.full}</p>
+                <p>
+                  <b>Phone:</b> {CLINIC_CONFIG.phone} • <b>Email:</b> {CLINIC_CONFIG.email}
                 </p>
-                <p className="text-[11px] text-slate-600 max-w-2xl mx-auto leading-relaxed">
-                  {CLINIC_CONFIG.address.full}
+                <p>
+                  <b>Consultant:</b> {CLINIC_CONFIG.consultantName} ({CLINIC_CONFIG.consultantEducation}) • {CLINIC_CONFIG.consultantTitle}
                 </p>
-                <div className="flex flex-wrap items-center justify-center gap-3 text-[11px] font-medium text-slate-700 pt-1">
-                  <span><b>Phone:</b> {CLINIC_CONFIG.phone}</span>
-                  <span>•</span>
-                  <span><b>Email:</b> {CLINIC_CONFIG.email}</span>
-                  <span>•</span>
-                  <span><b>Consultant:</b> {CLINIC_CONFIG.consultantName}, {CLINIC_CONFIG.consultantEducation}</span>
-                </div>
               </div>
-
-              {/* Title & Document Ref Bar */}
-              <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-bold text-sky-950">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 bg-sky-700 text-white rounded-lg text-[11px] uppercase tracking-wider font-extrabold">
-                    Clinical Case Sheet
-                  </span>
-                  <span className="font-mono text-slate-800">
-                    Reg No: <b>{regNo || (patient ? formatPatientId(patient.date, patient.serial) : '—')}</b>
-                  </span>
-                </div>
-                <div className="flex items-center gap-4 text-slate-600 font-medium">
-                  <span>Reg Date: <b>{patient?.date || '—'} {patient?.time ? `(${patient.time})` : ''}</b></span>
-                  <span>•</span>
-                  <span>Visit: <b>{patient?.visitType || 'Clinic'}</b></span>
-                </div>
+              <div className="pt-2">
+                <span className="inline-block bg-sky-900 text-white font-bold text-xs uppercase tracking-wider px-4 py-1 rounded-full">
+                  Physiotherapy Clinical Case Sheet
+                </span>
               </div>
-
-              {/* Patient Demographics Card */}
-              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3">
-                <h3 className="text-xs font-black uppercase tracking-wider text-sky-900 flex items-center gap-1.5 pb-2 border-b border-slate-200">
-                  <User className="w-3.5 h-3.5 text-sky-600" />
-                  <span>Patient Demographics & Medical Profile</span>
-                </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Patient Name</span>
-                    <span className="font-bold text-slate-900 text-sm">{patient?.name || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Age & Sex</span>
-                    <span className="font-bold text-slate-900">{patient?.age ? `${patient.age} yrs` : '—'} / {patient?.sex || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Contact Number</span>
-                    <span className="font-bold text-slate-900 font-mono">{patient?.contact || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Blood Group</span>
-                    <span className="font-bold text-slate-900">{patient?.bloodGroup || '—'}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Height & Weight</span>
-                    <span className="font-bold text-slate-900">{patient?.height || '—'} / {patient?.weight ? `${patient.weight} kg` : '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">BMI Analysis</span>
-                    <span className="font-bold text-slate-900">{bmi ? `${bmi.bmi} (${bmi.category})` : '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Referred By</span>
-                    <span className="font-bold text-slate-900">{patient?.referredBy || 'Self / Direct'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Consultant In-Charge</span>
-                    <span className="font-bold text-slate-900">{patient?.seenBy || CLINIC_CONFIG.consultantName}</span>
-                  </div>
-
-                  <div className="col-span-2 sm:col-span-4">
-                    <span className="text-slate-500 block text-[10.5px]">Residential Address</span>
-                    <span className="font-medium text-slate-800">{patient?.address || '—'}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Clinical Assessment & Diagnosis */}
-              <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-3">
-                <h3 className="text-xs font-black uppercase tracking-wider text-sky-900 flex items-center gap-1.5 pb-2 border-b border-slate-200">
-                  <Stethoscope className="w-3.5 h-3.5 text-sky-600" />
-                  <span>Clinical Assessment & Medical History</span>
-                </h3>
-                
-                <div className="space-y-3 text-xs">
-                  <div>
-                    <span className="text-slate-500 font-bold block text-[11px]">Clinical Diagnosis:</span>
-                    <p className="font-bold text-slate-950 text-sm mt-0.5 bg-sky-50/70 p-2.5 rounded-lg border border-sky-100">
-                      {patient?.diagnosis || 'General Musculoskeletal Rehabilitation'}
-                    </p>
-                  </div>
-
-                  <div>
-                    <span className="text-slate-500 font-bold block text-[11px]">Chief Complaints & Presenting History:</span>
-                    <p className="text-slate-800 mt-0.5 whitespace-pre-wrap leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                      {patient?.history || 'No presenting history recorded.'}
-                    </p>
-                  </div>
-
-                  {/* Pain Assessment (VAS) & Comorbidities */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
-                      <span className="text-[11px] font-bold text-slate-600 block">Initial VAS Pain Assessment:</span>
-                      <div className="flex items-center gap-3 mt-1">
-                        <span className="text-xs">Before: <b className="text-slate-900">{patient?.painScaleBefore ?? patient?.painScale ?? '—'}/10</b></span>
-                        <span>➔</span>
-                        <span className="text-xs">After: <b className="text-sky-800">{patient?.painScaleAfter !== undefined ? `${patient.painScaleAfter}/10` : '—'}</b></span>
-                      </div>
-                    </div>
-
-                    <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
-                      <span className="text-[11px] font-bold text-slate-600 block">Comorbid Conditions:</span>
-                      <p className="text-xs text-slate-800 mt-1">
-                        {[
-                          patient?.comorbid?.diabetes ? 'Diabetes Mellitus' : '',
-                          patient?.comorbid?.bp ? 'Hypertension (BP)' : '',
-                          patient?.comorbid?.thyroid ? 'Thyroid' : '',
-                          patient?.comorbid?.other && patient.comorbid.otherText ? patient.comorbid.otherText : '',
-                        ].filter(Boolean).join(', ') || 'None reported'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Initial Modalities Administered */}
-              <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2.5">
-                <h3 className="text-xs font-black uppercase tracking-wider text-sky-900 flex items-center gap-1.5 pb-2 border-b border-slate-200">
-                  <Activity className="w-3.5 h-3.5 text-sky-600" />
-                  <span>Initial Physiotherapy Modalities & Interventions</span>
-                </h3>
-                {activeModalities.length > 0 ? (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {activeModalities.map((mod) => (
-                      <span
-                        key={mod.key}
-                        className="px-2.5 py-1 bg-sky-50 text-sky-900 border border-sky-200 rounded-lg text-xs font-semibold flex items-center gap-1.5"
-                      >
-                        <Check className="w-3 h-3 text-sky-600 stroke-[2.5]" />
-                        <span>{mod.label}</span>
-                      </span>
-                    ))}
-                    {patient?.treatment?.other && patient.treatment.otherText && (
-                      <span className="px-2.5 py-1 bg-indigo-50 text-indigo-900 border border-indigo-200 rounded-lg text-xs font-semibold">
-                        Other: {patient.treatment.otherText}
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-xs text-slate-500 italic">No initial modalities specified.</p>
-                )}
-              </div>
-
-              {/* Follow-Up Rehabilitation Sessions (Complete Table!) */}
-              <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-emerald-950 flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Follow-Up Rehabilitation Sessions ({followUps.length} Recorded)</span>
-                  </h3>
-                  <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                    Total Follow-ups: {followUps.length}
-                  </span>
-                </div>
-
-                {followUps.length > 0 ? (
-                  <div className="overflow-x-auto rounded-xl border border-slate-200">
-                    <table className="w-full text-xs text-left">
-                      <thead>
-                        <tr className="border-b border-slate-200 bg-slate-50 text-slate-700 font-bold">
-                          <th className="py-2.5 px-3">Session</th>
-                          <th className="py-2.5 px-3">Date</th>
-                          <th className="py-2.5 px-3">Mode</th>
-                          <th className="py-2.5 px-3">VAS Pain</th>
-                          <th className="py-2.5 px-3">Interventions Given & Clinical Notes</th>
-                          <th className="py-2.5 px-3 text-right">Fee & Mode</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {followUps.map((fu, idx) => {
-                          const fuB = fu.painScaleBefore ?? fu.painScale;
-                          const fuA = fu.painScaleAfter;
-                          return (
-                            <tr key={fu.id || idx} className="hover:bg-slate-50/60 transition-colors">
-                              <td className="py-2 px-3 font-bold text-slate-900">#{idx + 1}</td>
-                              <td className="py-2 px-3 font-semibold text-slate-800 whitespace-nowrap">{fu.date}</td>
-                              <td className="py-2 px-3 text-slate-600">{fu.visitType || 'Clinic'}</td>
-                              <td className="py-2 px-3 whitespace-nowrap">
-                                {fuB !== undefined && fuA !== undefined ? (
-                                  <span className="font-bold text-sky-800">{fuB} ➔ {fuA}/10</span>
-                                ) : fuB !== undefined ? (
-                                  <span className="text-slate-700 font-medium">{fuB}/10</span>
-                                ) : (
-                                  <span className="text-slate-400">—</span>
-                                )}
-                              </td>
-                              <td className="py-2 px-3 text-slate-700 max-w-sm">
-                                {fu.treatmentsGiven && fu.treatmentsGiven.length > 0
-                                  ? fu.treatmentsGiven.join(', ')
-                                  : fu.notes || 'Routine physiotherapy rehabilitation session'}
-                              </td>
-                              <td className="py-2 px-3 text-right whitespace-nowrap">
-                                <span className="font-bold text-slate-900">₹{fu.fee || 0}/-</span>{' '}
-                                <span className="text-[10px] text-slate-500 font-medium">({fu.paymentMethod || 'Cash'})</span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="py-4 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-xs text-slate-500">
-                    No subsequent follow-up rehabilitation sessions recorded to date.
-                  </div>
-                )}
-              </div>
-
-              {/* Financial & Fee Summary */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
-                <div>
-                  <span className="text-slate-500 text-[10.5px] block">Initial Consultation Fee:</span>
-                  <span className="font-bold text-slate-900">₹{patient?.treatmentFee || 0}/- ({patient?.paymentMethod || 'Cash'})</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 text-[10.5px] block">Follow-up Sessions Total:</span>
-                  <span className="font-bold text-emerald-800">₹{followUpsTotalFee}/- ({followUps.length} Sessions)</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-slate-500 text-[10.5px] block">Grand Total Received:</span>
-                  <span className="font-black text-slate-950 text-sm">₹{grandTotalFee}/-</span>
-                </div>
-              </div>
-
-              {/* Authorized Signature & Footer */}
-              <div className="pt-6 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="text-[11px] text-slate-500 space-y-0.5 text-center sm:text-left">
-                  <p>Document Generated / Printed Date: <b>{presentDate}</b></p>
-                  <p>Official Patient Rehabilitation Record • Namana Physiotherapy Clinic</p>
-                </div>
-                <div className="text-center sm:text-right space-y-1">
-                  <div className="h-10"></div>
-                  <p className="font-bold text-slate-900 text-xs">{CLINIC_CONFIG.consultantName || 'R. Chandrashekar'}</p>
-                  <p className="text-[10.5px] text-slate-600">{CLINIC_CONFIG.consultantEducation || 'BPT, MIAP'}</p>
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{CLINIC_CONFIG.consultantTitle}</p>
-                </div>
-              </div>
-
             </div>
-          ) : (
-            /* VIEW MODE 2: Raw Embedded PDF Plugin */
-            <div className="w-full h-full min-h-[600px] bg-slate-200 rounded-2xl overflow-hidden relative flex flex-col">
-              {activeSrc && !embedLoadFailed ? (
-                <object
-                  data={activeSrc}
-                  type="application/pdf"
-                  className="w-full h-full flex-1 border-0 bg-white"
-                  onError={() => setEmbedLoadFailed(true)}
-                >
-                  <div className="flex flex-col items-center justify-center p-8 text-center bg-white h-full space-y-3">
-                    <AlertCircle className="w-12 h-12 text-amber-500" />
-                    <h4 className="text-base font-bold text-slate-800">
-                      Browser PDF Plugin Not Supported in this Frame
-                    </h4>
-                    <p className="text-xs text-slate-600 max-w-md">
-                      Your browser cannot render embedded PDF plugins inside this window. Switch to the <b>Clinical Document View</b> or open the PDF in a new tab.
-                    </p>
-                    <div className="flex items-center gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setViewMode('document')}
-                        className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
-                      >
-                        Switch to Clinical Document View
-                      </button>
-                      <a
-                        href={activeSrc}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-xs"
-                      >
-                        Open in New Tab
-                      </a>
-                    </div>
-                  </div>
-                </object>
-              ) : (
-                <div className="flex flex-col items-center justify-center p-8 text-center bg-white h-full space-y-3">
-                  <AlertCircle className="w-12 h-12 text-amber-500" />
-                  <h4 className="text-base font-bold text-slate-800">
-                    PDF Plugin Blocked or Unsupported
-                  </h4>
-                  <p className="text-xs text-slate-600 max-w-md">
-                    Switch back to the Clinical Document View to read all patient records, assessment notes, and follow-up sessions immediately.
+
+            {/* Patient Demographics Card */}
+            <div className="bg-sky-50/50 rounded-xl p-4 border border-sky-100">
+              <div className="flex items-center gap-2 mb-3 text-sky-950 font-bold text-xs uppercase tracking-wider">
+                <User className="w-4 h-4 text-sky-700" />
+                <span>Patient Demographics & Registration</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Registration ID</span>
+                  <span className="font-bold text-slate-900 font-mono">
+                    {regNo || formatPatientId(patient?.date || '', patient?.serial || 0)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Patient Name</span>
+                  <span className="font-bold text-slate-900">{patient?.name || patientName || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Age / Gender</span>
+                  <span className="font-bold text-slate-900">
+                    {patient?.age || '—'} yrs • {patient?.gender || '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Contact Phone</span>
+                  <span className="font-bold text-slate-900">{patient?.phone || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-500 block">First Visit Date</span>
+                  <span className="font-bold text-slate-900">{patient?.date || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Occupation</span>
+                  <span className="font-bold text-slate-900">{patient?.occupation || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Referred By Dr.</span>
+                  <span className="font-bold text-slate-900">{patient?.referredByDoctor || 'Direct / Self'}</span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Height / Weight / BMI</span>
+                  <span className="font-bold text-slate-900">
+                    {patient?.height ? `${patient.height} cm` : '—'} / {patient?.weight ? `${patient.weight} kg` : '—'}
+                    {bmi ? ` (${bmi.bmi} - ${bmi.category})` : ''}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Clinical Assessment & Diagnosis */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-1 border-b border-slate-200 text-sky-950 font-bold text-xs uppercase tracking-wider">
+                <Stethoscope className="w-4 h-4 text-sky-700" />
+                <span>Clinical Diagnosis & Medical History</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <span className="font-bold text-slate-700 block mb-1">Primary Clinical Diagnosis</span>
+                  <p className="text-slate-900 font-semibold text-sm">
+                    {patient?.diagnosis || 'General Physiotherapy Evaluation'}
                   </p>
-                  <div className="flex items-center gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('document')}
-                      className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
-                    >
-                      Switch to Document View
-                    </button>
-                    {activeSrc && (
-                      <a
-                        href={activeSrc}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-xs"
-                      >
-                        Open in New Tab
-                      </a>
-                    )}
+                </div>
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <span className="font-bold text-slate-700 block mb-1">Chief Complaints / Presenting Symptoms</span>
+                  <p className="text-slate-900">
+                    {patient?.complaints || 'No specific complaints recorded'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Medical History Details */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-slate-500 block text-[11px] font-semibold">History of Present Illness</span>
+                  <p className="text-slate-800 mt-1">{patient?.historyOfPresentIllness || 'None recorded'}</p>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-slate-500 block text-[11px] font-semibold">Past Medical History</span>
+                  <p className="text-slate-800 mt-1">{patient?.pastMedicalHistory || 'Nil significant'}</p>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-slate-500 block text-[11px] font-semibold">Surgical History</span>
+                  <p className="text-slate-800 mt-1">{patient?.surgicalHistory || 'Nil'}</p>
+                </div>
+              </div>
+
+              {/* Objective Examination */}
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2">
+                <span className="font-bold text-slate-700 block">Physical Examination Findings</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-800">
+                  <div>
+                    <span className="text-slate-500 font-semibold text-[11px]">Range of Motion (ROM):</span>
+                    <p>{patient?.rangeOfMotion || 'Within normal functional limits'}</p>
                   </div>
+                  <div>
+                    <span className="text-slate-500 font-semibold text-[11px]">Manual Muscle Testing (MMT):</span>
+                    <p>{patient?.manualMuscleTesting || 'Grade 5/5'}</p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <span className="text-slate-500 font-semibold text-[11px]">Special Tests & Functional Assessment:</span>
+                    <p>{patient?.specialTests || 'Negative for major impingement or instability'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Pain Scale (VAS) Evaluation */}
+            <div className="bg-amber-50/50 rounded-xl p-4 border border-amber-200/80">
+              <div className="flex items-center gap-2 mb-2 text-amber-900 font-bold text-xs uppercase tracking-wider">
+                <Activity className="w-4 h-4 text-amber-700" />
+                <span>Visual Analog Pain Scale (VAS: 0 - 10)</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="p-3 bg-white rounded-lg border border-amber-200 flex items-center justify-between">
+                  <span className="font-semibold text-slate-700">Initial Pain Score (Pre-Treatment):</span>
+                  <span className="font-black text-lg text-rose-600 bg-rose-50 px-3 py-1 rounded-md border border-rose-200 font-mono">
+                    {patient?.painScale !== undefined && patient?.painScale !== null ? `${patient.painScale} / 10` : 'Not Rated'}
+                  </span>
+                </div>
+                <div className="p-3 bg-white rounded-lg border border-amber-200 flex items-center justify-between">
+                  <span className="font-semibold text-slate-700">Current / Post-Treatment Pain Score:</span>
+                  <span className="font-black text-lg text-emerald-600 bg-emerald-50 px-3 py-1 rounded-md border border-emerald-200 font-mono">
+                    {patient?.painScaleAfter !== undefined && patient?.painScaleAfter !== null ? `${patient.painScaleAfter} / 10` : 'Not Rated'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Prescribed Treatment Modalities */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 pb-1 border-b border-slate-200 text-sky-950 font-bold text-xs uppercase tracking-wider">
+                <Stethoscope className="w-4 h-4 text-sky-700" />
+                <span>Prescribed Physiotherapy Modalities</span>
+              </div>
+              {activeModalities.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {activeModalities.map((mod) => (
+                    <span
+                      key={mod.key}
+                      className="px-3 py-1 rounded-lg bg-sky-100 text-sky-900 font-bold text-xs border border-sky-300 shadow-2xs"
+                    >
+                      {mod.label}
+                    </span>
+                  ))}
+                  {patient?.treatment?.other && patient?.treatment?.otherText && (
+                    <span className="px-3 py-1 rounded-lg bg-indigo-100 text-indigo-900 font-bold text-xs border border-indigo-300 shadow-2xs">
+                      {patient.treatment.otherText}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 italic">No specific electrotherapy or manual modalities logged.</p>
+              )}
+            </div>
+
+            {/* Follow-up Sessions Log */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                <div className="flex items-center gap-2 text-sky-950 font-bold text-xs uppercase tracking-wider">
+                  <Calendar className="w-4 h-4 text-sky-700" />
+                  <span>Rehabilitation Follow-up Visits ({followUps.length} Sessions)</span>
+                </div>
+                <span className="text-xs text-slate-500 font-medium">
+                  Total Sessions Logged: {followUps.length}
+                </span>
+              </div>
+
+              {followUps.length > 0 ? (
+                <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="p-2.5">#</th>
+                        <th className="p-2.5">Date</th>
+                        <th className="p-2.5">Treatments Given</th>
+                        <th className="p-2.5">VAS Pain</th>
+                        <th className="p-2.5">Clinical Progress Notes</th>
+                        <th className="p-2.5 text-right">Fee (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {followUps.map((fu, idx) => (
+                        <tr key={fu.id || idx} className="hover:bg-slate-50">
+                          <td className="p-2.5 font-bold text-slate-600 font-mono">{idx + 1}</td>
+                          <td className="p-2.5 font-medium whitespace-nowrap">{fu.date}</td>
+                          <td className="p-2.5">
+                            {fu.treatmentsGiven && fu.treatmentsGiven.length > 0 ? (
+                              <span className="text-sky-900 font-semibold">{fu.treatmentsGiven.join(', ')}</span>
+                            ) : (
+                              <span className="text-slate-400 italic">—</span>
+                            )}
+                          </td>
+                          <td className="p-2.5 font-mono font-bold">
+                            {fu.painScale !== undefined || fu.painScaleBefore !== undefined ? (
+                              <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                {fu.painScale ?? fu.painScaleBefore}/10
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="p-2.5 text-slate-700 max-w-xs">{fu.notes || '—'}</td>
+                          <td className="p-2.5 text-right font-mono font-bold text-slate-900">
+                            ₹{fu.fee || 0}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-slate-50 font-bold border-t border-slate-200 text-slate-900">
+                      <tr>
+                        <td colSpan={5} className="p-2.5 text-right">Total Follow-ups Fee:</td>
+                        <td className="p-2.5 text-right font-mono text-emerald-700">₹{followUpsTotalFee}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              ) : (
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-center text-xs text-slate-500">
+                  No rehabilitation follow-up visits recorded yet.
                 </div>
               )}
             </div>
-          )}
 
+            {/* Financial Summary */}
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <div className="space-y-0.5 text-center sm:text-left">
+                <span className="font-bold text-slate-800">Complete Financial Ledger</span>
+                <p className="text-slate-500">
+                  Initial Consultation: <b>₹{initialFeeNum}</b> • Follow-ups ({followUps.length}): <b>₹{followUpsTotalFee}</b>
+                </p>
+              </div>
+              <div className="bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-2xs text-center sm:text-right">
+                <span className="text-[11px] text-slate-500 block">Total Clinical Fees Collected</span>
+                <span className="text-base font-black text-emerald-700 font-mono">₹{grandTotalFee}</span>
+              </div>
+            </div>
+
+            {/* Authorized Signature & Footer */}
+            <div className="pt-6 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="text-[11px] text-slate-500 space-y-0.5 text-center sm:text-left">
+                <p>Document Generated Date: <b>{presentDate}</b></p>
+                <p>Official Patient Rehabilitation Record • Namana Physiotherapy Clinic</p>
+              </div>
+              <div className="text-center sm:text-right space-y-1">
+                <div className="h-10"></div>
+                <p className="font-bold text-slate-900 text-xs">{CLINIC_CONFIG.consultantName || 'R. Chandrashekar'}</p>
+                <p className="text-[10.5px] text-slate-600">{CLINIC_CONFIG.consultantEducation || 'BPT, MIAP'}</p>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{CLINIC_CONFIG.consultantTitle}</p>
+              </div>
+            </div>
+
+          </div>
         </div>
 
-        {/* Modal Footer - Hidden on Print */}
+        {/* Modal Footer */}
         <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-600 shrink-0 print:hidden">
           <div className="text-[11px] text-slate-500">
             Official Clinical Record • Namana Physiotherapy Clinic, Mysuru
@@ -592,11 +499,18 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={handlePrint}
-              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+              id="modal-footer-download-btn"
+              onClick={handleDownload}
+              disabled={isDownloading}
+              className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+              title="Download PDF Case Sheet to device"
             >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Print Sheet</span>
+              {isDownloading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+              ) : (
+                <Download className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span>{isDownloading ? 'Downloading...' : 'Download PDF'}</span>
             </button>
             <button
               type="button"

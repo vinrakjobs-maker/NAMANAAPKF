@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import { CLINIC_CONFIG } from '../constants';
 import { drawClinicLogoToPdf } from './clinicLogoPdf';
 import { loadClinicSettings } from './storage';
+import { downloadPdfDoc } from './pdfDownloadHelper';
 
 export interface MonthTaxRecord {
   monthName: string;
@@ -324,5 +325,5 @@ export function generatePdfTaxReport(data: TaxReportData): void {
   doc.text(`Namana Physiotherapy Clinic`, sigX + sigWidth / 2, y + 16.8, { align: 'center' });
 
   // Save the PDF
-  doc.save(`Namana_Physio_Annual_Revenue_FY${selectedFY}-${selectedFY + 1}.pdf`);
+  downloadPdfDoc(doc, `Namana_Physio_Annual_Revenue_FY${selectedFY}-${selectedFY + 1}.pdf`);
 }
