@@ -26,6 +26,7 @@ import {
   Send,
   Phone,
   TrendingDown,
+  Loader2,
 } from 'lucide-react';
 import { Patient, TreatmentModalities, FollowUpVisit, ReceiptData, PaymentMethod, LocumPhysiotherapist } from '../types';
 import { MODALITIES_LIST, BLOOD_GROUPS, COMMON_DIAGNOSES, HEIGHT_PRESETS } from '../constants';
@@ -103,6 +104,26 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
   const [isSharingPdf, setIsSharingPdf] = useState(false);
   const [pdfShareSuccess, setPdfShareSuccess] = useState<string | null>(null);
   const [customPhone, setCustomPhone] = useState('');
+
+  // PDF Generation state for Patient ID & Top PDF action
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfSuccessToast, setPdfSuccessToast] = useState(false);
+
+  const handleDownloadCaseSheetPdf = async () => {
+    if (isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    try {
+      const success = await generatePdfCaseSheet(patient);
+      if (success) {
+        setPdfSuccessToast(true);
+        setTimeout(() => setPdfSuccessToast(false), 3500);
+      }
+    } catch (err) {
+      console.error('Failed to generate PDF Case Sheet:', err);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
 
   // Pain scale trajectory modal
   const [showPainModal, setShowPainModal] = useState(false);
@@ -342,9 +363,24 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
             {/* Name and Reg No */}
             <div className="flex-1 space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-mono text-xs font-bold text-sky-800 bg-sky-100 border border-sky-200 px-2.5 py-1 rounded-lg shrink-0">
-                  Patient ID: {patient.regNo || formatPatientId(patient.date, patient.serial)}
-                </span>
+                <button
+                  type="button"
+                  id="btn-patient-id-badge"
+                  onClick={handleDownloadCaseSheetPdf}
+                  disabled={isGeneratingPdf}
+                  className="font-mono text-xs font-bold text-sky-800 bg-sky-100 hover:bg-sky-200 active:bg-sky-300 border border-sky-300 px-2.5 py-1 rounded-lg shrink-0 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs group"
+                  title="Click Patient ID to download/view Complete Case Sheet PDF"
+                >
+                  {isGeneratingPdf ? (
+                    <Loader2 className="w-3.5 h-3.5 text-sky-600 animate-spin shrink-0" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5 text-sky-600 group-hover:scale-110 transition-transform shrink-0" />
+                  )}
+                  <span>Patient ID: {patient.regNo || formatPatientId(patient.date, patient.serial)}</span>
+                  <span className="text-[9px] bg-sky-600 group-hover:bg-sky-700 text-white font-sans px-1.5 py-0.2 rounded font-extrabold uppercase tracking-wide">
+                    PDF
+                  </span>
+                </button>
                 <input
                   id="patient-name-input"
                   type="text"
@@ -355,6 +391,14 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
                   className="text-lg sm:text-xl font-extrabold text-sky-950 placeholder-slate-400 outline-none border-b border-transparent focus:border-sky-500 bg-transparent flex-1 min-w-0"
                 />
               </div>
+
+              {/* PDF Download Success Banner */}
+              {pdfSuccessToast && (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold animate-fade-in">
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Case sheet PDF generated successfully!</span>
+                </div>
+              )}
 
               {/* Quick Details line */}
               <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
@@ -413,12 +457,17 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
                 <button
                   type="button"
                   id="btn-case-sheet-pdf"
-                  onClick={() => generatePdfCaseSheet(patient)}
+                  onClick={handleDownloadCaseSheetPdf}
+                  disabled={isGeneratingPdf}
                   className="flex-1 sm:flex-initial flex items-center justify-center text-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 active:bg-sky-200 text-sky-800 border border-sky-200 text-xs font-bold transition-colors cursor-pointer shadow-2xs whitespace-nowrap min-w-0"
                   title="Download Complete Case Sheet PDF"
                 >
-                  <Download className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                  <span className="text-center">PDF</span>
+                  {isGeneratingPdf ? (
+                    <Loader2 className="w-3.5 h-3.5 text-sky-600 animate-spin shrink-0" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                  )}
+                  <span className="text-center">{isGeneratingPdf ? 'Saving PDF...' : 'PDF'}</span>
                 </button>
 
                 {!isDeleted ? (
@@ -893,10 +942,41 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
               </h3>
 
               {/* Diagnosis Input */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                  Primary Clinical Diagnosis *
-                </label>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-bold text-slate-600">
+                    Primary Clinical Diagnosis *
+                  </label>
+                  <span className="text-[10px] text-sky-700 font-semibold bg-sky-50 px-2 py-0.5 rounded-md border border-sky-200">
+                    Select preset or type your own
+                  </span>
+                </div>
+
+                {/* Preset Dropdown */}
+                <select
+                  disabled={isDeleted}
+                  value={COMMON_DIAGNOSES.includes(patient.diagnosis) ? patient.diagnosis : (patient.diagnosis ? '__custom__' : '')}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '__custom__') {
+                      if (COMMON_DIAGNOSES.includes(patient.diagnosis)) {
+                        updateField('diagnosis', '');
+                      }
+                    } else if (val) {
+                      updateField('diagnosis', val);
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 text-slate-800 rounded-xl focus:border-sky-500 outline-none text-xs font-semibold shadow-2xs cursor-pointer"
+                >
+                  <option value="">— Select from Common Diagnoses (or type below) —</option>
+                  {COMMON_DIAGNOSES.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                  <option value="__custom__">✎ Other / Type Custom Diagnosis (Type below)...</option>
+                </select>
+
                 <input
                   type="text"
                   value={patient.diagnosis}
@@ -907,7 +987,7 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
                 />
 
                 {/* Quick diagnosis chips */}
-                <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                <div className="flex items-center gap-1.5 flex-wrap mt-1">
                   <span className="text-[10px] text-slate-500 font-semibold">Common:</span>
                   {COMMON_DIAGNOSES.slice(0, 6).map((diag) => (
                     <button
@@ -915,11 +995,33 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
                       key={diag}
                       onClick={() => updateField('diagnosis', diag)}
                       disabled={isDeleted}
-                      className="text-[10px] bg-slate-100 hover:bg-sky-50 hover:text-sky-900 text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+                      className={`text-[10px] px-2 py-0.5 rounded-lg border transition-colors cursor-pointer ${
+                        patient.diagnosis === diag
+                          ? 'bg-sky-600 text-white border-sky-600 font-bold'
+                          : 'bg-slate-100 hover:bg-sky-50 hover:text-sky-900 text-slate-700 border-slate-200'
+                      }`}
                     >
                       {diag}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (COMMON_DIAGNOSES.includes(patient.diagnosis)) {
+                        updateField('diagnosis', '');
+                      }
+                      const el = document.querySelector('input[placeholder*="e.g. Cervical Spondylosis"]') as HTMLInputElement;
+                      if (el) el.focus();
+                    }}
+                    disabled={isDeleted}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg border transition-colors cursor-pointer ${
+                      patient.diagnosis && !COMMON_DIAGNOSES.includes(patient.diagnosis)
+                        ? 'bg-indigo-600 text-white border-indigo-600 font-bold'
+                        : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                    }`}
+                  >
+                    + Other / Custom
+                  </button>
                 </div>
               </div>
 

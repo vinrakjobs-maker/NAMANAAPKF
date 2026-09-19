@@ -333,8 +333,8 @@ export function parseDateAndTimestamp(
         resolvedTime = formatTime24Hour(parseInt(match[1], 10));
       }
     }
-    // 3. Fallback to current real-world 24-hour time
-    extractedTime = resolvedTime || formatTime24Hour();
+    // 3. Fallback to fallbackTimestamp or stable default (prevents timestamp drift on subsequent sync cycles)
+    extractedTime = resolvedTime || (fallbackTimestamp ? formatTime24Hour(fallbackTimestamp) : '10:00:00');
   } else {
     extractedTime = formatTime24Hour(extractedTime);
   }

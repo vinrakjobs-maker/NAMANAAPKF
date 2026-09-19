@@ -195,9 +195,62 @@ export function getPdfReceiptBlob(receipt: ReceiptData): Blob {
   return doc.output('blob');
 }
 
-export function generatePdfReceipt(receipt: ReceiptData): void {
-  const doc = createPdfReceiptDoc(receipt);
-  const safeName = (receipt.name || 'patient').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-  const safeReceiptNo = (receipt.receiptNo || 'slip').replace(/[^a-z0-9]/gi, '_');
-  doc.save(`Receipt_${safeReceiptNo}_${safeName}.pdf`);
+export async function generatePdfReceipt(receipt: ReceiptData): Promise<boolean> {
+  try {
+    const doc = createPdfReceiptDoc(receipt);
+    const safeName = (receipt.name || 'patient').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+    const safeReceiptNo = (receipt.receiptNo || 'slip').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `Receipt_${safeReceiptNo}_${safeName}.pdf`;
+
+    // 1. Direct browser download via jsPDF save
+    try {
+      doc.save(fileName);
+      return true;
+    } catch (saveErr) {
+      console.warn('doc.save direct trigger error on receipt, attempting blob anchor download:', saveErr);
+    }
+
+    // 2. Direct Blob URL Download link
+    try {
+      const blob = doc.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      const downloadLink = document.createElement('a');
+      downloadLink.href = blobUrl;
+      downloadLink.download = fileName;
+      downloadLink.style.display = 'none';
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+
+      setTimeout(() => {
+        if (document.body.contains(downloadLink)) {
+          document.body.removeChild(downloadLink);
+        }
+        URL.revokeObjectURL(blobUrl);
+      }, 2500);
+
+      return true;
+    } catch (blobErr) {
+      console.warn('Blob anchor download failed on receipt, attempting data URI download:', blobErr);
+    }
+
+    // 3. Fallback: Data URI download link
+    const dataUri = doc.output('datauristring');
+    const downloadLink = document.createElement('a');
+    downloadLink.href = dataUri;
+    downloadLink.download = fileName;
+    downloadLink.style.display = 'none';
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+
+    setTimeout(() => {
+      if (document.body.contains(downloadLink)) {
+        document.body.removeChild(downloadLink);
+      }
+    }, 2500);
+
+    return true;
+  } catch (err) {
+    console.error('Receipt PDF download failed:', err);
+    return false;
+  }
 }

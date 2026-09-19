@@ -205,32 +205,34 @@ export const NewPatientModal: React.FC<NewPatientModalProps> = ({
   const hasErrors = touched && Object.keys(errors).length > 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-sky-100 overflow-hidden my-auto text-slate-800 flex flex-col max-h-[94vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 lg:p-6 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fade-in">
+      <div className="bg-white rounded-none lg:rounded-3xl w-full h-full lg:h-auto lg:max-h-[94vh] lg:max-w-3xl shadow-2xl border-0 lg:border border-sky-100 overflow-hidden my-0 lg:my-auto text-slate-800 flex flex-col">
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-sky-100 flex items-center justify-between bg-sky-50/70 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-sky-600 rounded-2xl text-white shadow-xs">
-              <UserPlus className="w-5 h-5" />
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-sky-100 flex items-center justify-between bg-sky-50/70 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 sm:p-2.5 bg-sky-600 rounded-2xl text-white shadow-xs shrink-0">
+              <UserPlus className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-extrabold text-sky-950">New Patient Registration</h3>
-                <span className="font-mono text-xs font-bold text-sky-800 bg-sky-100 border border-sky-200 px-2 py-0.5 rounded-lg">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm sm:text-base font-extrabold text-sky-950 truncate">New Patient Registration</h3>
+                <span className="font-mono text-xs font-bold text-sky-800 bg-sky-100 border border-sky-200 px-2 py-0.5 rounded-lg shrink-0">
                   {currentRegNo}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500">
-                Complete all mandatory demographics to create the patient record
+              <p className="text-[10.5px] sm:text-[11px] text-slate-500 truncate">
+                Fill the required demographics to register a new patient chart
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-            title="Cancel and close"
+            className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 active:bg-slate-300/60 transition-colors cursor-pointer shrink-0 ml-2"
+            title="Close (ESC)"
+            aria-label="Close"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5 stroke-[2.5]" />
           </button>
         </div>
 
@@ -560,41 +562,69 @@ export const NewPatientModal: React.FC<NewPatientModalProps> = ({
             </h4>
 
             {/* Diagnosis Input */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
                 <label className="block text-[11px] font-bold text-slate-700">
                   Primary Clinical Diagnosis / Condition <span className="text-rose-500">*</span>
                 </label>
-                <span className="text-[10px] text-slate-400">Select preset or type custom</span>
+                <span className="text-[10px] text-sky-700 font-semibold bg-sky-50 px-2 py-0.5 rounded-md border border-sky-200">
+                  Select preset or type your own
+                </span>
               </div>
-              <input
-                type="text"
-                value={diagnosis}
-                onChange={(e) => {
-                  setDiagnosis(e.target.value);
-                  if (errors.diagnosis) setErrors((prev) => ({ ...prev, diagnosis: '' }));
-                }}
-                placeholder="e.g. Cervical Spondylosis / Frozen Shoulder / Sciatica"
-                list="common-diagnoses-list"
-                className={`w-full px-3.5 py-2 bg-white border rounded-xl text-xs text-slate-900 outline-none font-semibold shadow-2xs ${
-                  errors.diagnosis
-                    ? 'border-rose-400 focus:border-rose-500 bg-rose-50/30'
-                    : 'border-slate-200 focus:border-sky-500'
-                }`}
-              />
-              <datalist id="common-diagnoses-list">
-                {COMMON_DIAGNOSES.map((d) => (
-                  <option key={d} value={d} />
-                ))}
-              </datalist>
-              {errors.diagnosis && (
-                <p className="text-[11px] font-semibold text-rose-600 mt-1">{errors.diagnosis}</p>
-              )}
+
+              {/* Preset Selector Dropdown */}
+              <div className="relative">
+                <select
+                  value={COMMON_DIAGNOSES.includes(diagnosis) ? diagnosis : (diagnosis ? '__custom__' : '')}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '__custom__') {
+                      // Keep current diagnosis or clear if it was an exact preset to allow typing
+                      if (COMMON_DIAGNOSES.includes(diagnosis)) {
+                        setDiagnosis('');
+                      }
+                    } else if (val) {
+                      setDiagnosis(val);
+                      if (errors.diagnosis) setErrors((prev) => ({ ...prev, diagnosis: '' }));
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:border-sky-500 shadow-2xs cursor-pointer"
+                >
+                  <option value="">— Select from Common Diagnoses (or type below) —</option>
+                  {COMMON_DIAGNOSES.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                  <option value="__custom__">✎ Other / Type Custom Diagnosis (Type below)...</option>
+                </select>
+              </div>
+
+              {/* Free-form Custom Text Input (No restrictive datalist) */}
+              <div>
+                <input
+                  type="text"
+                  value={diagnosis}
+                  onChange={(e) => {
+                    setDiagnosis(e.target.value);
+                    if (errors.diagnosis) setErrors((prev) => ({ ...prev, diagnosis: '' }));
+                  }}
+                  placeholder="Type any custom diagnosis or condition (e.g. Cervical Radiculopathy, Hamstring Strain...)"
+                  className={`w-full px-3.5 py-2.5 bg-white border rounded-xl text-xs text-slate-900 outline-none font-bold shadow-2xs ${
+                    errors.diagnosis
+                      ? 'border-rose-400 focus:border-rose-500 bg-rose-50/30'
+                      : 'border-slate-200 focus:border-sky-500'
+                  }`}
+                />
+                {errors.diagnosis && (
+                  <p className="text-[11px] font-semibold text-rose-600 mt-1">{errors.diagnosis}</p>
+                )}
+              </div>
 
               {/* Quick Preset Diagnosis Chips */}
-              <div className="flex items-center gap-1.5 flex-wrap pt-2">
-                <span className="text-[10px] text-slate-400 font-bold">Quick Select:</span>
-                {COMMON_DIAGNOSES.slice(0, 4).map((d) => (
+              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                <span className="text-[10px] text-slate-400 font-bold">Quick Chips:</span>
+                {COMMON_DIAGNOSES.slice(0, 5).map((d) => (
                   <button
                     type="button"
                     key={d}
@@ -602,7 +632,7 @@ export const NewPatientModal: React.FC<NewPatientModalProps> = ({
                       setDiagnosis(d);
                       if (errors.diagnosis) setErrors((prev) => ({ ...prev, diagnosis: '' }));
                     }}
-                    className={`text-[10px] font-medium px-2 py-0.5 rounded-lg border transition-colors cursor-pointer ${
+                    className={`text-[10.5px] font-medium px-2 py-0.5 rounded-lg border transition-colors cursor-pointer ${
                       diagnosis === d
                         ? 'bg-sky-600 text-white border-sky-600 font-bold'
                         : 'bg-white border-slate-200 text-slate-700 hover:bg-sky-50'
@@ -611,6 +641,24 @@ export const NewPatientModal: React.FC<NewPatientModalProps> = ({
                     {d}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (COMMON_DIAGNOSES.includes(diagnosis)) {
+                      setDiagnosis('');
+                    }
+                    // Focus custom text
+                    const el = document.querySelector('input[placeholder*="Type any custom diagnosis"]') as HTMLInputElement;
+                    if (el) el.focus();
+                  }}
+                  className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-lg border transition-colors cursor-pointer ${
+                    diagnosis && !COMMON_DIAGNOSES.includes(diagnosis)
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+                  }`}
+                >
+                  + Other / Custom
+                </button>
               </div>
             </div>
 

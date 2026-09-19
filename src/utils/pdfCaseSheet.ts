@@ -278,8 +278,63 @@ export function getPdfCaseSheetBlob(patient: Patient): Blob {
   return doc.output('blob');
 }
 
-export function generatePdfCaseSheet(patient: Patient): void {
-  const doc = createPdfCaseSheetDoc(patient);
-  const safeName = (patient.name || 'patient').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-  doc.save(`CaseSheet_${patient.serial || 'record'}_${safeName}.pdf`);
+export async function generatePdfCaseSheet(patient: Patient): Promise<boolean> {
+  try {
+    const doc = createPdfCaseSheetDoc(patient);
+    const regClean = (patient.regNo || formatPatientId(patient.date, patient.serial) || 'record')
+      .replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeName = (patient.name || 'patient').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+    const fileName = `CaseSheet_${regClean}_${safeName}.pdf`;
+
+    // 1. Direct browser download via jsPDF built-in file saver
+    try {
+      doc.save(fileName);
+      return true;
+    } catch (saveErr) {
+      console.warn('doc.save direct trigger encountered error, attempting blob anchor download:', saveErr);
+    }
+
+    // 2. Direct Blob URL Download link
+    try {
+      const blob = doc.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      const downloadLink = document.createElement('a');
+      downloadLink.href = blobUrl;
+      downloadLink.download = fileName;
+      downloadLink.style.display = 'none';
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+
+      setTimeout(() => {
+        if (document.body.contains(downloadLink)) {
+          document.body.removeChild(downloadLink);
+        }
+        URL.revokeObjectURL(blobUrl);
+      }, 2500);
+
+      return true;
+    } catch (blobErr) {
+      console.warn('Blob anchor download failed, attempting data URI download:', blobErr);
+    }
+
+    // 3. Fallback: Data URI download link
+    const dataUri = doc.output('datauristring');
+    const downloadLink = document.createElement('a');
+    downloadLink.href = dataUri;
+    downloadLink.download = fileName;
+    downloadLink.style.display = 'none';
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+
+    setTimeout(() => {
+      if (document.body.contains(downloadLink)) {
+        document.body.removeChild(downloadLink);
+      }
+    }, 2500);
+
+    return true;
+  } catch (primaryErr) {
+    console.error('Case Sheet PDF download failed:', primaryErr);
+    return false;
+  }
 }

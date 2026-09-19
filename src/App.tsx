@@ -247,6 +247,9 @@ export function App() {
     setMobileShowDirectory(false);
 
     // Instant append to Google Apps Script Archives (strictly add-only, no overwriting, automatic local DB replication)
+    if (autoPushTimerRef.current) {
+      clearTimeout(autoPushTimerRef.current);
+    }
     try {
       const webhookUrl = localStorage.getItem('namana_script_url') || clinicSettings.scriptUrl || '';
       if (webhookUrl && webhookUrl.trim().startsWith('http')) {

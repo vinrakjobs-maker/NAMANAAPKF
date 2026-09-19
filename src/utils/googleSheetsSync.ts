@@ -2652,28 +2652,38 @@ function pureAppendPatientsToArchive(ss, patients, sheetTitle, nowTimestamp, eve
   if (lastRow > 1) {
     var numCols = sheetArc.getLastColumn() || 20;
     var existingValues = sheetArc.getRange(2, 1, lastRow - 1, numCols).getValues();
+    var existingDisplayVals = sheetArc.getRange(2, 1, lastRow - 1, numCols).getDisplayValues();
 
     for (var r = 0; r < existingValues.length; r++) {
       var row = existingValues[r];
-      var rReg = normalizeRegKey(row[0]);
-      var rName = normalizeNameKey(row[1]);
-      var rDate = normalizeArchiveDate(row[2]);
-      var rTime = normalizeArchiveTime(row[3]);
+      var dispRow = existingDisplayVals[r] || [];
+      var rReg = normalizeRegKey(dispRow[0] || row[0]);
+      var rName = normalizeNameKey(dispRow[1] || row[1]);
+      var rDate = normalizeArchiveDate(dispRow[2] || row[2]);
+      var rTime = normalizeArchiveTime(dispRow[3] || row[3]);
 
       var isDup = false;
-      if (rDate && rTime) {
-        var sig1 = (rReg || rName || ('r_' + r)) + '|' + rDate + '|' + rTime;
-        var sigReg = rReg ? (rReg + '|' + rDate + '|' + rTime) : '';
-        var sigName = rName ? (rName + '|' + rDate + '|' + rTime) : '';
+      var sigDateTime = (rDate && rTime) ? (rDate + '|' + rTime) : '';
+      var sigReg = rReg ? ('reg_' + rReg) : '';
+      var sigRegDate = (rReg && rDate) ? (rReg + '|' + rDate) : '';
+      var sigRegDateTime = (rReg && rDate && rTime) ? (rReg + '|' + rDate + '|' + rTime) : '';
+      var sigNameDateTime = (rName && rDate && rTime) ? (rName + '|' + rDate + '|' + rTime) : '';
 
-        if (existingSignatures[sig1] || (sigReg && existingSignatures[sigReg]) || (sigName && existingSignatures[sigName])) {
-          isDup = true;
-          hasExistingDuplicates = true;
-        } else {
-          existingSignatures[sig1] = true;
-          if (sigReg) existingSignatures[sigReg] = true;
-          if (sigName) existingSignatures[sigName] = true;
-        }
+      if (
+        (sigDateTime && existingSignatures[sigDateTime]) ||
+        (sigRegDateTime && existingSignatures[sigRegDateTime]) ||
+        (sigRegDate && existingSignatures[sigRegDate]) ||
+        (sigNameDateTime && existingSignatures[sigNameDateTime]) ||
+        (sigReg && existingSignatures[sigReg])
+      ) {
+        isDup = true;
+        hasExistingDuplicates = true;
+      } else {
+        if (sigDateTime) existingSignatures[sigDateTime] = true;
+        if (sigRegDateTime) existingSignatures[sigRegDateTime] = true;
+        if (sigRegDate) existingSignatures[sigRegDate] = true;
+        if (sigNameDateTime) existingSignatures[sigNameDateTime] = true;
+        if (sigReg) existingSignatures[sigReg] = true;
       }
 
       if (!isDup) {
@@ -2709,20 +2719,28 @@ function pureAppendPatientsToArchive(ss, patients, sheetTitle, nowTimestamp, eve
     var pRealTime = formatScriptTime24(p.time, p.createdAt || p.updatedAt);
     var pTimeNorm = normalizeArchiveTime(pRealTime);
 
-    if (pDate && pTimeNorm) {
-      var inSig = (pReg || pName || ('in_' + i)) + '|' + pDate + '|' + pTimeNorm;
-      var inSigReg = pReg ? (pReg + '|' + pDate + '|' + pTimeNorm) : '';
-      var inSigName = pName ? (pName + '|' + pDate + '|' + pTimeNorm) : '';
+    var inSigDateTime = (pDate && pTimeNorm) ? (pDate + '|' + pTimeNorm) : '';
+    var inSigReg = pReg ? ('reg_' + pReg) : '';
+    var inSigRegDate = (pReg && pDate) ? (pReg + '|' + pDate) : '';
+    var inSigRegDateTime = (pReg && pDate && pTimeNorm) ? (pReg + '|' + pDate + '|' + pTimeNorm) : '';
+    var inSigNameDateTime = (pName && pDate && pTimeNorm) ? (pName + '|' + pDate + '|' + pTimeNorm) : '';
 
-      // Strictly prevent storing data with same date and timestamp multiple times
-      if (existingSignatures[inSig] || (inSigReg && existingSignatures[inSigReg]) || (inSigName && existingSignatures[inSigName])) {
-        continue;
-      }
-
-      existingSignatures[inSig] = true;
-      if (inSigReg) existingSignatures[inSigReg] = true;
-      if (inSigName) existingSignatures[inSigName] = true;
+    // Strictly prevent duplicate data from being pushed: no duplication of date and timestamp
+    if (
+      (inSigDateTime && existingSignatures[inSigDateTime]) ||
+      (inSigRegDateTime && existingSignatures[inSigRegDateTime]) ||
+      (inSigRegDate && existingSignatures[inSigRegDate]) ||
+      (inSigNameDateTime && existingSignatures[inSigNameDateTime]) ||
+      (inSigReg && existingSignatures[inSigReg])
+    ) {
+      continue;
     }
+
+    if (inSigDateTime) existingSignatures[inSigDateTime] = true;
+    if (inSigRegDateTime) existingSignatures[inSigRegDateTime] = true;
+    if (inSigRegDate) existingSignatures[inSigRegDate] = true;
+    if (inSigNameDateTime) existingSignatures[inSigNameDateTime] = true;
+    if (inSigReg) existingSignatures[inSigReg] = true;
 
     var rawPhone = p.contact ? String(p.contact).trim() : '';
     var phoneCell = rawPhone ? (rawPhone.indexOf("'") === 0 ? rawPhone : "'" + rawPhone) : '';
@@ -2793,29 +2811,39 @@ function pureAppendFollowUpsToArchive(ss, patients, nowTimestamp) {
   if (lastRow > 1) {
     var numCols = fuSheet.getLastColumn() || 17;
     var existingValues = fuSheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+    var existingDisplayVals = fuSheet.getRange(2, 1, lastRow - 1, numCols).getDisplayValues();
 
     for (var r = 0; r < existingValues.length; r++) {
       var row = existingValues[r];
-      var fuReg = normalizeRegKey(row[0]);
-      var fuName = normalizeNameKey(row[1]);
-      var fuDate = normalizeArchiveDate(row[3]);
-      var fuTime = normalizeArchiveTime(row[4]);
-      var fuNum = String(row[2] || '').trim();
+      var dispRow = existingDisplayVals[r] || [];
+      var fuReg = normalizeRegKey(dispRow[0] || row[0]);
+      var fuName = normalizeNameKey(dispRow[1] || row[1]);
+      var fuNum = String(dispRow[2] || row[2] || '').trim();
+      var fuDate = normalizeArchiveDate(dispRow[3] || row[3]);
+      var fuTime = normalizeArchiveTime(dispRow[4] || row[4]);
 
       var isDup = false;
-      if (fuDate && fuTime) {
-        var sig1 = (fuReg || fuName || ('fu_' + r)) + '|' + fuDate + '|' + fuTime;
-        var sigNum = (fuReg || fuName || ('fu_' + r)) + '|' + fuNum + '|' + fuDate + '|' + fuTime;
-        var sigReg = fuReg ? (fuReg + '|' + fuDate + '|' + fuTime) : '';
+      var sigDateTime = (fuDate && fuTime) ? (fuDate + '|' + fuTime) : '';
+      var sigNumDate = (fuReg && fuNum && fuDate) ? (fuReg + '|' + fuNum + '|' + fuDate) : '';
+      var sigRegDateTime = (fuReg && fuDate && fuTime) ? (fuReg + '|' + fuDate + '|' + fuTime) : '';
+      var sigNumDateTime = (fuReg && fuNum && fuDate && fuTime) ? (fuReg + '|' + fuNum + '|' + fuDate + '|' + fuTime) : '';
+      var sigNameDateTime = (fuName && fuDate && fuTime) ? (fuName + '|' + fuDate + '|' + fuTime) : '';
 
-        if (existingFuSignatures[sig1] || existingFuSignatures[sigNum] || (sigReg && existingFuSignatures[sigReg])) {
-          isDup = true;
-          hasExistingFuDuplicates = true;
-        } else {
-          existingFuSignatures[sig1] = true;
-          existingFuSignatures[sigNum] = true;
-          if (sigReg) existingFuSignatures[sigReg] = true;
-        }
+      if (
+        (sigDateTime && existingFuSignatures[sigDateTime]) ||
+        (sigNumDateTime && existingFuSignatures[sigNumDateTime]) ||
+        (sigRegDateTime && existingFuSignatures[sigRegDateTime]) ||
+        (sigNumDate && existingFuSignatures[sigNumDate]) ||
+        (sigNameDateTime && existingFuSignatures[sigNameDateTime])
+      ) {
+        isDup = true;
+        hasExistingFuDuplicates = true;
+      } else {
+        if (sigDateTime) existingFuSignatures[sigDateTime] = true;
+        if (sigNumDateTime) existingFuSignatures[sigNumDateTime] = true;
+        if (sigRegDateTime) existingFuSignatures[sigRegDateTime] = true;
+        if (sigNumDate) existingFuSignatures[sigNumDate] = true;
+        if (sigNameDateTime) existingFuSignatures[sigNameDateTime] = true;
       }
 
       if (!isDup) {
@@ -2853,19 +2881,28 @@ function pureAppendFollowUpsToArchive(ss, patients, nowTimestamp) {
         var fuTimeNorm = normalizeArchiveTime(fuRealTime);
         var fuNum = String(fu.sessionNum || (f + 1));
 
-        if (fuDate && fuTimeNorm) {
-          var sig1 = (pReg || pName || ('in_fu_' + i + '_' + f)) + '|' + fuDate + '|' + fuTimeNorm;
-          var sigNum = (pReg || pName || ('in_fu_' + i + '_' + f)) + '|' + fuNum + '|' + fuDate + '|' + fuTimeNorm;
-          var sigReg = pReg ? (pReg + '|' + fuDate + '|' + fuTimeNorm) : '';
+        var inFuDateTime = (fuDate && fuTimeNorm) ? (fuDate + '|' + fuTimeNorm) : '';
+        var inFuNumDate = (pReg && fuNum && fuDate) ? (pReg + '|' + fuNum + '|' + fuDate) : '';
+        var inFuRegDateTime = (pReg && fuDate && fuTimeNorm) ? (pReg + '|' + fuDate + '|' + fuTimeNorm) : '';
+        var inFuNumDateTime = (pReg && fuNum && fuDate && fuTimeNorm) ? (pReg + '|' + fuNum + '|' + fuDate + '|' + fuTimeNorm) : '';
+        var inFuNameDateTime = (pName && fuDate && fuTimeNorm) ? (pName + '|' + fuDate + '|' + fuTimeNorm) : '';
 
-          if (existingFuSignatures[sig1] || existingFuSignatures[sigNum] || (sigReg && existingFuSignatures[sigReg])) {
-            continue;
-          }
-
-          existingFuSignatures[sig1] = true;
-          existingFuSignatures[sigNum] = true;
-          if (sigReg) existingFuSignatures[sigReg] = true;
+        // Strictly prevent duplicate sessions with identical Date and Time Stamp
+        if (
+          (inFuDateTime && existingFuSignatures[inFuDateTime]) ||
+          (inFuNumDateTime && existingFuSignatures[inFuNumDateTime]) ||
+          (inFuRegDateTime && existingFuSignatures[inFuRegDateTime]) ||
+          (inFuNumDate && existingFuSignatures[inFuNumDate]) ||
+          (inFuNameDateTime && existingFuSignatures[inFuNameDateTime])
+        ) {
+          continue;
         }
+
+        if (inFuDateTime) existingFuSignatures[inFuDateTime] = true;
+        if (inFuNumDateTime) existingFuSignatures[inFuNumDateTime] = true;
+        if (inFuRegDateTime) existingFuSignatures[inFuRegDateTime] = true;
+        if (inFuNumDate) existingFuSignatures[inFuNumDate] = true;
+        if (inFuNameDateTime) existingFuSignatures[inFuNameDateTime] = true;
 
         newFuRows.push([
           p.regNo || '',

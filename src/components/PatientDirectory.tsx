@@ -19,9 +19,11 @@ import {
   Square,
   AlertOctagon,
   Cloud,
+  Download,
 } from 'lucide-react';
 import { Patient, SearchFilter } from '../types';
 import { deduplicatePatients, formatPatientId } from '../utils/storage';
+import { generatePdfCaseSheet } from '../utils/pdfCaseSheet';
 import { PermanentDeleteModal } from './PermanentDeleteModal';
 import { PatientPhoneDirectoryModal } from './PatientPhoneDirectoryModal';
 
@@ -633,9 +635,18 @@ export const PatientDirectory: React.FC<PatientDirectoryProps> = ({
                         </div>
 
                         <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5 flex-wrap">
-                          <span className="font-mono font-bold text-sky-800 bg-sky-50 px-1.5 py-0.5 rounded text-[10px]">
-                            Patient ID: {patient.regNo || formatPatientId(patient.date, patient.serial)}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              generatePdfCaseSheet(patient);
+                            }}
+                            className="font-mono font-bold text-sky-800 hover:text-sky-950 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1 cursor-pointer transition-colors"
+                            title="Download Complete Case Sheet PDF for this patient"
+                          >
+                            <Download className="w-2.5 h-2.5 text-sky-600 shrink-0" />
+                            <span>Patient ID: {patient.regNo || formatPatientId(patient.date, patient.serial)}</span>
+                          </button>
                           {patient.age && <span>{patient.age}y</span>}
                           {patient.sex && <span>• {patient.sex}</span>}
                           {patient.visitType && (
