@@ -46,7 +46,7 @@ import {
   deleteCustomTreatment,
 } from '../utils/storage';
 import { generatePdfCaseSheet, getPdfCaseSheetBlob, getPdfCaseSheetFileInfo } from '../utils/pdfCaseSheet';
-import { getPdfReceiptBlob } from '../utils/pdfReceipt';
+import { getPdfReceiptBlob, generatePdfReceipt } from '../utils/pdfReceipt';
 import { ManageReferralDoctorsModal } from './ManageReferralDoctorsModal';
 import { ManageTreatmentsModal } from './ManageTreatmentsModal';
 import { PdfViewerModal } from './PdfViewerModal';
@@ -364,6 +364,53 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
       sessionTo: fu.date,
       paymentMethod: fu.paymentMethod || 'Cash',
     });
+  };
+
+  const [downloadingReceipt, setDownloadingReceipt] = useState<string | null>(null);
+
+  // Direct download receipt PDF without needing to open preview modal
+  const handleDownloadDirectReceipt = async (fu?: FollowUpVisit, fuIdx?: number) => {
+    const key = fu ? `fu-${fu.id || fuIdx || fu.date}` : 'initial';
+    setDownloadingReceipt(key);
+    try {
+      const receiptData: ReceiptData = fu
+        ? {
+            open: true,
+            name: patient.name,
+            serial: patient.serial,
+            receiptNo: fu.receiptNo || generateReceiptNumber(patient),
+            date: fu.date,
+            amount: fu.fee || '500',
+            visitType: fu.visitType || patient.visitType || 'Clinic',
+            address: patient.address,
+            age: patient.age,
+            therapyFor: patient.diagnosis || 'Follow-up Physiotherapy Session',
+            sessionFrom: fu.date,
+            sessionTo: fu.date,
+            paymentMethod: fu.paymentMethod || 'Cash',
+          }
+        : {
+            name: patient.name,
+            serial: patient.serial,
+            receiptNo: patient.receiptNo || generateReceiptNumber(patient),
+            date: patient.date,
+            amount: patient.treatmentFee || '500',
+            visitType: patient.visitType || 'Clinic',
+            address: patient.address,
+            age: patient.age,
+            therapyFor: patient.diagnosis || 'Physiotherapy Consultation',
+            sessionFrom: patient.date,
+            sessionTo: patient.date,
+            paymentMethod: patient.paymentMethod || 'Cash',
+          };
+      await generatePdfReceipt(receiptData);
+      setPdfSuccessToast(true);
+      setTimeout(() => setPdfSuccessToast(false), 5000);
+    } catch (e) {
+      console.error('Direct receipt download failed:', e);
+    } finally {
+      setDownloadingReceipt(null);
+    }
   };
 
   return (
@@ -1657,14 +1704,32 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
                     );
                   })}
 
-                  <div className="sm:ml-auto">
+                  <div className="sm:ml-auto flex items-center gap-2 flex-wrap">
                     <button
                       type="button"
+                      id="btn-download-direct-receipt-initial"
+                      onClick={() => handleDownloadDirectReceipt()}
+                      disabled={downloadingReceipt === 'initial'}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                      title="Download PDF Receipt directly to your device"
+                    >
+                      {downloadingReceipt === 'initial' ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5 text-white" />
+                      )}
+                      <span>Download Receipt PDF</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      id="btn-issue-receipt-initial"
                       onClick={handleOpenInitialReceipt}
-                      className="flex items-center gap-1.5 px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                      title="View, customize, or print receipt"
                     >
                       <Receipt className="w-3.5 h-3.5" />
-                      <span>Issue Receipt ({patient.paymentMethod || 'Cash'})</span>
+                      <span>View Receipt ({patient.paymentMethod || 'Cash'})</span>
                     </button>
                   </div>
                 </div>
@@ -1820,10 +1885,28 @@ export const PatientCaseSheet: React.FC<PatientCaseSheetProps> = ({
 
                           <button
                             type="button"
-                            onClick={() => handleOpenFollowUpReceipt(fu)}
-                            className="flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+                            id={`btn-download-fu-receipt-${idx}`}
+                            onClick={() => handleDownloadDirectReceipt(fu, idx)}
+                            disabled={downloadingReceipt === `fu-${fu.id || idx || fu.date}`}
+                            className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+                            title="Download PDF Receipt for this follow-up"
                           >
-                            <Receipt className="w-3 h-3 text-emerald-600" />
+                            {downloadingReceipt === `fu-${fu.id || idx || fu.date}` ? (
+                              <Loader2 className="w-3 h-3 animate-spin text-white" />
+                            ) : (
+                              <Download className="w-3 h-3 text-white" />
+                            )}
+                            <span>PDF</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            id={`btn-view-fu-receipt-${idx}`}
+                            onClick={() => handleOpenFollowUpReceipt(fu)}
+                            className="flex items-center gap-1 px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+                            title="View and customize receipt"
+                          >
+                            <Receipt className="w-3 h-3 text-sky-600" />
                             <span>Receipt</span>
                           </button>
 

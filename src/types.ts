@@ -160,7 +160,7 @@ export interface SearchFilter {
 }
 
 export interface ReceiptData {
-  open: boolean;
+  open?: boolean;
   name: string;
   serial: string | number;
   regNo?: string;

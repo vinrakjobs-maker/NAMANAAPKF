@@ -17,6 +17,7 @@ import {
 import { Patient, ReceiptData } from '../types';
 import { formatPatientId, generateReceiptNumber, deduplicatePatients, getLocumPhysiotherapists } from '../utils/storage';
 import { CLINIC_CONFIG } from '../constants';
+import { downloadCsv } from '../utils/fileDownloadHelper';
 
 interface FeeReportProps {
   patients: Patient[];
@@ -306,14 +307,8 @@ export const FeeReport: React.FC<FeeReportProps> = ({ patients, onOpenReceipt, o
     ]);
 
     const csvContent =
-      'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Namana_Physio_Fee_Transactions_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    downloadCsv(csvContent, `Namana_Physio_Fee_Transactions_${new Date().toISOString().slice(0, 10)}.csv`);
   };
 
   const handleExportPhysioCsv = () => {
@@ -349,14 +344,8 @@ export const FeeReport: React.FC<FeeReportProps> = ({ patients, onOpenReceipt, o
     });
 
     const csvContent =
-      'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Namana_Physiotherapists_Revenue_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    downloadCsv(csvContent, `Namana_Physiotherapists_Revenue_${new Date().toISOString().slice(0, 10)}.csv`);
   };
 
   const handleExportReferredDoctorCsv = () => {
@@ -382,14 +371,8 @@ export const FeeReport: React.FC<FeeReportProps> = ({ patients, onOpenReceipt, o
     });
 
     const csvContent =
-      'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Namana_Doctor_References_Revenue_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    downloadCsv(csvContent, `Namana_Doctor_References_Revenue_${new Date().toISOString().slice(0, 10)}.csv`);
   };
 
   return (

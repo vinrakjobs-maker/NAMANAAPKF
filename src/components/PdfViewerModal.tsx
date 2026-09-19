@@ -19,6 +19,7 @@ import { CLINIC_CONFIG, MODALITIES_LIST } from '../constants';
 import { calculateBMI } from '../utils/bmi';
 import { formatPatientId } from '../utils/storage';
 import { generatePdfCaseSheet } from '../utils/pdfCaseSheet';
+import { downloadFile } from '../utils/fileDownloadHelper';
 
 interface PdfViewerModalProps {
   isOpen: boolean;
@@ -75,15 +76,19 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
       } else if (patient) {
         await generatePdfCaseSheet(patient);
       } else if (activeSrc) {
-        const a = document.createElement('a');
-        a.href = activeSrc;
-        a.download = fileName;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          if (document.body.contains(a)) document.body.removeChild(a);
-        }, 1500);
+        let fileData: Blob | string = dataUri || activeSrc;
+        if (blobUrl) {
+          try {
+            fileData = await fetch(blobUrl).then((r) => r.blob());
+          } catch {
+            fileData = dataUri || activeSrc;
+          }
+        }
+        await downloadFile({
+          data: fileData,
+          fileName,
+          mimeType: 'application/pdf',
+        });
       }
     } catch (err) {
       console.error('Download error in PDF viewer modal:', err);

@@ -37,6 +37,7 @@ import {
   generatePhoneDirectoryHtmlSnippet,
   GOOGLE_APPS_SCRIPT_SNIPPET,
 } from '../utils/googleSheetsSync';
+import { downloadJson } from '../utils/fileDownloadHelper';
 
 interface CloudSyncModalProps {
   settings: ClinicSettings;
@@ -406,15 +407,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   };
 
   // Export JSON backup
-  const handleExportJson = () => {
+  const handleExportJson = async () => {
     const dataStr = JSON.stringify(patients, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Namana_Physio_Backup_${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+    const fileName = `Namana_Physio_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+    await downloadJson(dataStr, fileName);
   };
 
   // Import JSON backup

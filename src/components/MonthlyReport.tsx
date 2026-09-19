@@ -4,6 +4,7 @@ import { Patient } from '../types';
 import { MONTH_NAMES } from '../constants';
 import { generatePdfMonthlyReport } from '../utils/pdfMonthlyReport';
 import { formatPatientId, deduplicatePatients } from '../utils/storage';
+import { downloadCsv } from '../utils/fileDownloadHelper';
 
 interface MonthlyReportProps {
   patients: Patient[];
@@ -180,14 +181,8 @@ export const MonthlyReport: React.FC<MonthlyReportProps> = ({ patients, onSelect
       s.fee,
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Namana_Physio_Monthly_${selectedMonth}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    downloadCsv(csvContent, `Namana_Physio_Monthly_${selectedMonth}.csv`);
   };
 
   const handleDownloadPdf = () => {

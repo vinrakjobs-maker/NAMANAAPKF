@@ -21,6 +21,7 @@ import { Patient, ClinicSettings } from '../types';
 import { CLINIC_CONFIG } from '../constants';
 import { generatePdfTaxReport, MonthTaxRecord, TaxReportData } from '../utils/pdfTaxReport';
 import { loadClinicSettings, saveClinicSettings, getLocumPhysiotherapists } from '../utils/storage';
+import { downloadCsv } from '../utils/fileDownloadHelper';
 
 interface ITReturnReportProps {
   patients: Patient[];
@@ -246,14 +247,8 @@ export const ITReturnReport: React.FC<ITReturnReportProps> = ({ patients, onUpda
     rows.push(['"PRESUMPTIVE TAXABLE INCOME (SEC 44ADA 50%)"', deemedIncome44ADA, '', '', '']);
 
     const csvContent =
-      'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Namana_Clinic_Overall_IT_Return_FY${selectedFY}-${selectedFY + 1}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    downloadCsv(csvContent, `Namana_Clinic_Overall_IT_Return_FY${selectedFY}-${selectedFY + 1}.csv`);
   };
 
   // Export Physiotherapist Comparison or Individual CSV
@@ -284,17 +279,11 @@ export const ITReturnReport: React.FC<ITReturnReportProps> = ({ patients, onUpda
       ]);
 
       const csvContent =
-        'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement('a');
-      link.setAttribute('href', encodedUri);
-      link.setAttribute(
-        'download',
+        '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+      downloadCsv(
+        csvContent,
         `IT_Return_${currentPhysioData.name.replace(/\s+/g, '_')}_FY${selectedFY}-${selectedFY + 1}.csv`
       );
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
     } else {
       // Export all physiotherapists comparison
       const headers = [
@@ -317,14 +306,8 @@ export const ITReturnReport: React.FC<ITReturnReportProps> = ({ patients, onUpda
       ]);
 
       const csvContent =
-        'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement('a');
-      link.setAttribute('href', encodedUri);
-      link.setAttribute('download', `Namana_Physiotherapists_IT_Returns_FY${selectedFY}-${selectedFY + 1}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+        '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+      downloadCsv(csvContent, `Namana_Physiotherapists_IT_Returns_FY${selectedFY}-${selectedFY + 1}.csv`);
     }
   };
 

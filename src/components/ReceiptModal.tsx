@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { X, Download } from 'lucide-react';
+import { X, Download, Loader2, CheckCircle2, Share2 } from 'lucide-react';
 import { CLINIC_CONFIG } from '../constants';
 import { ReceiptData } from '../types';
 import { ClinicLogo } from './ClinicLogo';
-import { generatePdfReceipt } from '../utils/pdfReceipt';
+import { generatePdfReceipt, getPdfReceiptBlob } from '../utils/pdfReceipt';
 import { loadClinicSettings, formatPatientId, parsePatientId } from '../utils/storage';
+import { sharePdfViaWhatsApp } from '../utils/whatsappHelper';
 
 interface ReceiptModalProps {
   receiptData: ReceiptData;
@@ -53,8 +54,58 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptData, onClose
     showGst: settings.showGstOnReceipt,
   };
 
-  const handleDownloadPdf = () => {
-    generatePdfReceipt(currentReceipt);
+  const [downloading, setDownloading] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+  const handleDownloadPdf = async () => {
+    setDownloading(true);
+    setStatusMessage({ type: 'info', text: 'Generating & saving official receipt PDF...' });
+    try {
+      const ok = await generatePdfReceipt(currentReceipt);
+      if (ok) {
+        setStatusMessage({
+          type: 'success',
+          text: 'Receipt PDF successfully downloaded & saved to your device!',
+        });
+      } else {
+        setStatusMessage({
+          type: 'info',
+          text: 'Download initiated! Check your Downloads folder or device notifications.',
+        });
+      }
+      setTimeout(() => setStatusMessage(null), 5000);
+    } catch (err: any) {
+      console.error('Receipt download error:', err);
+      setStatusMessage({
+        type: 'error',
+        text: 'Failed to download receipt: ' + (err?.message || 'Please try again'),
+      });
+      setTimeout(() => setStatusMessage(null), 5000);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleShareWhatsApp = async () => {
+    setSharing(true);
+    setStatusMessage({ type: 'info', text: 'Preparing Receipt PDF for WhatsApp...' });
+    try {
+      const blob = getPdfReceiptBlob(currentReceipt);
+      const safeName = (currentReceipt.name || 'Patient').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeReceiptNo = (currentReceipt.receiptNo || 'slip').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = `Receipt_${safeReceiptNo}_${safeName}.pdf`;
+      const caption = `Namana Physiotherapy Clinic - Official Receipt\nReceipt No: ${currentReceipt.receiptNo}\nPatient: ${currentReceipt.name} (Reg: ${currentReceipt.regNo})\nAmount: ₹${currentReceipt.amount}/- (${currentReceipt.paymentMethod})`;
+      await sharePdfViaWhatsApp('', blob, fileName, caption);
+      setStatusMessage({ type: 'success', text: 'Receipt shared successfully!' });
+      setTimeout(() => setStatusMessage(null), 4000);
+    } catch (err: any) {
+      console.error('WhatsApp share error:', err);
+      setStatusMessage({ type: 'error', text: 'Could not share via WhatsApp: ' + (err?.message || 'Try Download PDF') });
+      setTimeout(() => setStatusMessage(null), 5000);
+    } finally {
+      setSharing(false);
+    }
   };
 
   return (
@@ -271,21 +322,75 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptData, onClose
           </div>
         </div>
 
+        {/* Status Message Banner */}
+        {statusMessage && (
+          <div
+            id="receipt-status-banner"
+            className={`mt-3 p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 animate-fade-in ${
+              statusMessage.type === 'success'
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                : statusMessage.type === 'error'
+                ? 'bg-rose-50 text-rose-800 border border-rose-200'
+                : 'bg-sky-50 text-sky-800 border border-sky-200'
+            }`}
+          >
+            {statusMessage.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : statusMessage.type === 'error' ? (
+              <X className="w-4 h-4 text-rose-600 shrink-0" />
+            ) : (
+              <Loader2 className="w-4 h-4 text-sky-600 animate-spin shrink-0" />
+            )}
+            <span className="flex-1">{statusMessage.text}</span>
+          </div>
+        )}
+
         {/* Modal Bottom Actions */}
-        <div className="mt-4 flex items-center justify-end gap-2.5 print:hidden">
+        <div className="mt-4 flex items-center justify-between gap-2.5 flex-wrap print:hidden">
           <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
+            id="receipt-modal-share-btn"
+            type="button"
+            onClick={handleShareWhatsApp}
+            disabled={sharing || downloading}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
           >
-            Close
+            {sharing ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-700" />
+            ) : (
+              <Share2 className="w-3.5 h-3.5 text-emerald-700" />
+            )}
+            <span>Share via WhatsApp</span>
           </button>
-          <button
-            onClick={handleDownloadPdf}
-            className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs"
-          >
-            <Download className="w-3.5 h-3.5 text-white" />
-            <span>Download PDF</span>
-          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              id="receipt-modal-close-btn"
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
+            >
+              Close
+            </button>
+            <button
+              id="receipt-modal-download-btn"
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={downloading}
+              className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-60"
+            >
+              {downloading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                  <span>Saving to Device...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-3.5 h-3.5 text-white" />
+                  <span>Download PDF</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -66,6 +66,7 @@ import {
   HOURLY_BACKUP_LATEST_KEY,
 } from '../utils/hourlyBackup';
 import { localDB, DatabaseStats } from '../db/localDatabase';
+import { downloadJson } from '../utils/fileDownloadHelper';
 
 interface GoogleSheetsDashboardProps {
   settings: ClinicSettings;
@@ -220,16 +221,11 @@ export const GoogleSheetsDashboard: React.FC<GoogleSheetsDashboardProps> = ({
   const handleExportDatabaseDump = async () => {
     try {
       const jsonStr = await localDB.exportFullDatabaseDump();
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `namana_physio_localdb_${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const fileName = `namana_physio_localdb_${new Date().toISOString().slice(0, 10)}.json`;
+      await downloadJson(jsonStr, fileName);
       setStatusMsg({
         type: 'success',
-        text: 'Local database snapshot (.json) exported successfully with all tables and indices.',
+        text: 'Local database snapshot (.json) exported & saved successfully with all tables and indices.',
       });
       setTimeout(() => setStatusMsg(null), 4000);
     } catch (e: any) {
@@ -631,27 +627,22 @@ export const GoogleSheetsDashboard: React.FC<GoogleSheetsDashboardProps> = ({
     }
   };
 
-  const handleDownloadLatestHourlySnapshot = () => {
+  const handleDownloadLatestHourlySnapshot = async () => {
     try {
       const raw = localStorage.getItem(HOURLY_BACKUP_LATEST_KEY);
       if (!raw) {
         setStatusMsg({ type: 'error', text: 'No hourly backup snapshot found in local storage yet. Click "Test / Trigger Hourly Backup Now" to create one.' });
         return;
       }
-      const blob = new Blob([raw], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Namana_Hourly_Backup_${new Date().toISOString().slice(0, 13)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const fileName = `Namana_Hourly_Backup_${new Date().toISOString().slice(0, 13)}.json`;
+      await downloadJson(raw, fileName);
       setStatusMsg({ type: 'success', text: 'Latest hourly backup snapshot downloaded as JSON file.' });
     } catch (e: any) {
       setStatusMsg({ type: 'error', text: e?.message || 'Failed to download snapshot' });
     }
   };
 
-  const handleExportJson = () => {
+  const handleExportJson = async () => {
     // Sanitize every patient and every follow-up so date and time are clean and separated
     const cleanPatients = patients.map((p) => {
       const { cleanDate, cleanTime } = parseDateAndTimestamp(p.date, p.time, p.updatedAt || p.createdAt);
@@ -685,13 +676,10 @@ export const GoogleSheetsDashboard: React.FC<GoogleSheetsDashboardProps> = ({
     };
 
     const dataStr = JSON.stringify(backupPayload, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Namana_Physio_Clinical_Backup_${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+    const fileName = `Namana_Physio_Clinical_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+    await downloadJson(dataStr, fileName);
+    setStatusMsg({ type: 'success', text: 'Clinical master backup downloaded and saved successfully!' });
+    setTimeout(() => setStatusMsg(null), 4000);
   };
 
   const handleImportJson = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1715,14 +1703,9 @@ export const GoogleSheetsDashboard: React.FC<GoogleSheetsDashboardProps> = ({
                               </div>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  const blob = new Blob([JSON.stringify(item.data, null, 2)], { type: 'application/json' });
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement('a');
-                                  a.href = url;
-                                  a.download = `namana-hourly-${item.hourKey.replace(/[: ]/g, '-')}.json`;
-                                  a.click();
-                                  URL.revokeObjectURL(url);
+                                onClick={async () => {
+                                  const fileName = `namana-hourly-${item.hourKey.replace(/[: ]/g, '-')}.json`;
+                                  await downloadJson(item.data, fileName);
                                 }}
                                 className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 rounded-lg text-[10px] font-mono transition-colors"
                               >
